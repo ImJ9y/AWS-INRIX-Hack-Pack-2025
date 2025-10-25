@@ -6,10 +6,16 @@ Browser-only React + TypeScript experience built with Vite. It taps the laptop w
 
 ```bash
 pnpm install
-pnpm dev -- --https
+pnpm dev
 ```
 
 Open https://localhost:5173, grant camera permission, and move quickly toward the camera followed by stillness to trigger the fall detector. All inference stays on-device.
+
+> Chrome treats `http://localhost` as a secure origin, so the app can access the webcam even if you stay on HTTP. If you need HTTPS (e.g., for Safari), generate a local certificate with [mkcert](https://github.com/FiloSottile/mkcert) or OpenSSL, place the files in `certs/localhost-{key,cert}.pem`, and start the dev server with:
+
+```bash
+VITE_DEV_HTTPS=true pnpm dev
+```
 
 ### Requirements
 

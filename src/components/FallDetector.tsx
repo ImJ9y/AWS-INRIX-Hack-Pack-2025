@@ -2,14 +2,7 @@ import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { useWebcam } from "../hooks/useWebcam";
 import { usePose } from "../hooks/usePose";
-import {
-  INITIAL_STATE,
-  classifySeverity,
-  computeFeatures,
-  describe,
-  landmarksToPoseFrame,
-  updateFallState
-} from "../lib/fallLogic";
+import { INITIAL_STATE, computeFeatures, landmarksToPoseFrame, updateFallState } from "../lib/fallLogic";
 import { EventList } from "./EventList";
 import { MetricBadge } from "./MetricBadge";
 import { DetectorState, FallEvent, FallFeatures, PoseFrame } from "../types";
@@ -35,10 +28,10 @@ const skeletonConnections: [number, number][] = [
 ];
 
 const statusStyles: Record<DetectorState["status"], { label: string; className: string }> = {
-  idle: { label: "No fall", className: "bg-emerald-500/20 text-emerald-200" },
-  suspected: { label: "Possible fall…", className: "bg-amber-500/20 text-amber-200" },
-  confirmed: { label: "Fall confirmed", className: "bg-rose-500/20 text-rose-200" },
-  cooldown: { label: "Cooldown", className: "bg-blue-500/20 text-blue-200" }
+  idle: { label: "No fall", className: "bg-emerald-100 text-emerald-700" },
+  suspected: { label: "Possible fall", className: "bg-amber-100 text-amber-700" },
+  confirmed: { label: "Fall confirmed", className: "bg-rose-100 text-rose-700" },
+  cooldown: { label: "Cooldown", className: "bg-sky-100 text-sky-700" }
 };
 
 export function FallDetector() {
@@ -50,7 +43,6 @@ export function FallDetector() {
   const [state, setState] = useState(INITIAL_STATE);
   const [events, setEvents] = useState<FallEvent[]>([]);
   const [features, setFeatures] = useState<FallFeatures | null>(null);
-  const [showOverlay, setShowOverlay] = useState(true);
   const [sampleSrc, setSampleSrc] = useState<string | null>(null);
   const [sampleLabel, setSampleLabel] = useState<string | null>(null);
 
@@ -112,15 +104,11 @@ export function FallDetector() {
         canvas.height = height;
       }
       context.clearRect(0, 0, canvas.width, canvas.height);
-      if (showOverlay && landmarks.length) {
+      if (landmarks.length) {
         context.save();
-        context.globalAlpha = 0.4;
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        context.restore();
-        context.save();
-        context.lineWidth = 3;
-        context.strokeStyle = "#38bdf8";
-        context.fillStyle = "#f97316";
+        context.lineWidth = 2;
+        context.strokeStyle = "#0ea5e9";
+        context.fillStyle = "#fb7185";
         skeletonConnections.forEach(([a, b]) => {
           const startPoint = landmarks[a];
           const endPoint = landmarks[b];
@@ -136,30 +124,13 @@ export function FallDetector() {
           context.arc(point.x * canvas.width, point.y * canvas.height, 5, 0, Math.PI * 2);
           context.fill();
         });
-        if (features) {
-          context.fillStyle = "#f8fafc";
-          context.font = "16px 'Inter', sans-serif";
-          context.globalAlpha = 0.9;
-          const textBg = (x: number, y: number, text: string) => {
-            const padding = 6;
-            const metrics = context.measureText(text);
-            const boxWidth = metrics.width + padding * 2;
-            const boxHeight = 24;
-            context.fillStyle = "rgba(15, 23, 42, 0.7)";
-            context.fillRect(x, y - boxHeight + 4, boxWidth, boxHeight);
-            context.fillStyle = "#f8fafc";
-            context.fillText(text, x + padding, y);
-          };
-          textBg(24, 32, `Tilt: ${features.torsoTiltDeg.toFixed(0)}°`);
-          textBg(24, 64, `Δy: ${features.headYVelPeak.toFixed(2)}`);
-        }
         context.restore();
       }
       raf = requestAnimationFrame(render);
     };
     raf = requestAnimationFrame(render);
     return () => cancelAnimationFrame(raf);
-  }, [landmarks, resolution.height, resolution.width, showOverlay, features]);
+  }, [landmarks, resolution.height, resolution.width]);
 
   const status = statusStyles[state.status];
   const cameraStateMessage = useMemo(() => {
@@ -167,26 +138,6 @@ export function FallDetector() {
     if (!ready && !sampleSrc) return "Awaiting camera permission…";
     return null;
   }, [cameraError, ready, sampleSrc]);
-
-  const handleDemoEvent = () => {
-    const mockFeatures: FallFeatures = {
-      headYDrop: 0.48,
-      headYVelPeak: 0.6,
-      torsoTiltDeg: 72,
-      stillnessSec: 4.5,
-      confidence: 0.92,
-      score: 6
-    };
-    const severity = classifySeverity(mockFeatures.score);
-    const demoEvent: FallEvent = {
-      id: crypto.randomUUID?.() ?? `${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      severity,
-      features: mockFeatures,
-      description: describe(mockFeatures)
-    };
-    setEvents((prev) => [demoEvent, ...prev].slice(0, 10));
-  };
 
   const handleReplayClick = () => {
     replayInputRef.current?.click();
@@ -220,123 +171,95 @@ export function FallDetector() {
   };
 
   return (
-    <section className="space-y-6">
-      <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
-        <div className="space-y-4">
-          <div className="relative rounded-3xl border border-white/10 bg-slate-900 shadow-soft">
-            <div className="relative aspect-video overflow-hidden rounded-3xl">
-              <video
-                ref={videoRef}
-                className="h-full w-full object-cover"
-                playsInline
-                muted
-                autoPlay
-              />
-              <canvas
-                ref={canvasRef}
-                className={clsx(
-                  "pointer-events-none absolute inset-0 h-full w-full",
-                  showOverlay ? "opacity-100" : "opacity-0"
-                )}
-              />
-              <div className="absolute left-4 top-4 flex gap-2">
-                <span className={clsx("rounded-full px-3 py-1 text-sm font-medium", status.className)}>
-                  {status.label}
-                </span>
-                {modelReady && (
-                  <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/80">
-                    Model: loaded
-                  </span>
-                )}
-              </div>
-              <div className="absolute right-4 bottom-4 flex flex-wrap gap-2 text-xs text-white/80">
-                <span className="rounded-full bg-black/40 px-2 py-1 font-mono">FPS {fps.toFixed(0)}</span>
-                <span className="rounded-full bg-black/40 px-2 py-1 font-mono">
-                  Confidence {(confidence * 100).toFixed(0)}%
-                </span>
-                {sampleSrc && (
-                  <span className="rounded-full bg-black/40 px-2 py-1">Replay: {sampleLabel}</span>
-                )}
-              </div>
-            </div>
-            {cameraStateMessage && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center rounded-3xl bg-slate-950/80 text-center">
-                <p className="text-lg font-semibold text-white">{cameraStateMessage}</p>
-                <p className="mt-2 max-w-sm text-sm text-white/70">
-                  Please enable camera permissions and reload over HTTPS (https://localhost). No video ever leaves this device.
-                </p>
-              </div>
+    <section className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
+      <div className="rounded-3xl border border-slate-200 bg-white shadow-md">
+        <div className="relative aspect-video overflow-hidden rounded-3xl bg-slate-100">
+          <video
+            ref={videoRef}
+            className="h-full w-full object-cover"
+            playsInline
+            muted
+            autoPlay
+          />
+          <canvas
+            ref={canvasRef}
+            className={clsx(
+              "pointer-events-none absolute inset-0 h-full w-full"
+            )}
+          />
+          <div className="absolute left-4 top-4 flex gap-2">
+            <span className={clsx("rounded-full px-3 py-1 text-sm font-medium", status.className)}>
+              {status.label}
+            </span>
+            {modelReady && (
+              <span className="rounded-full bg-white/80 px-3 py-1 text-xs text-slate-700">Model ready</span>
             )}
           </div>
-          <div className="flex flex-wrap gap-3">
-            <label className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/90">
-              <input
-                type="checkbox"
-                className="h-4 w-4 rounded border-white/30 bg-transparent"
-                checked={showOverlay}
-                onChange={(event) => setShowOverlay(event.target.checked)}
-              />
-              Show overlay
-            </label>
+          <div className="absolute right-4 bottom-4 flex flex-wrap gap-2 text-xs text-slate-800">
+            <span className="rounded-full bg-white/80 px-2 py-1 font-mono">FPS {fps.toFixed(0)}</span>
+            <span className="rounded-full bg-white/80 px-2 py-1 font-mono">
+              Confidence {(confidence * 100).toFixed(0)}%
+            </span>
+            {sampleSrc && <span className="rounded-full bg-white/80 px-2 py-1">Clip: {sampleLabel}</span>}
+          </div>
+          {cameraStateMessage && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/90 text-center">
+              <p className="text-lg font-semibold text-slate-900">{cameraStateMessage}</p>
+              <p className="mt-2 max-w-sm text-sm text-slate-600">
+                Allow camera access and reload (HTTPS or http://localhost). Processing stays on this machine.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="flex flex-col gap-4">
+        <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-lg font-semibold text-slate-900">{status.label}</p>
+              <p className="text-xs text-slate-500">Live fall detection</p>
+            </div>
+            <div className="flex flex-col items-end gap-1 text-xs text-slate-500">
+              <span className="rounded-full bg-slate-100 px-3 py-1 font-mono text-slate-700">FPS {fps.toFixed(0)}</span>
+              <span className="rounded-full bg-slate-100 px-3 py-1 font-mono text-slate-700">
+                Confidence {(confidence * 100).toFixed(0)}%
+              </span>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2 text-sm">
             <button
               type="button"
               onClick={handleReplayClick}
-              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white hover:bg-white/10"
+              className="rounded-full border border-slate-300 px-4 py-2 font-medium text-slate-700 hover:bg-slate-100"
             >
-              Replay from sample
+              Upload clip
             </button>
             {sampleSrc && (
               <button
                 type="button"
                 onClick={exitReplay}
-                className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-200"
+                className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 font-medium text-emerald-700"
               >
-                Use camera feed
+                Use camera
               </button>
             )}
-            <input
-              ref={replayInputRef}
-              type="file"
-              accept="video/*"
-              className="hidden"
-              onChange={handleReplayFile}
-            />
           </div>
-          {features && (
-            <div className="grid gap-3 md:grid-cols-2">
-              <MetricBadge label="Torso tilt" value={`${features.torsoTiltDeg.toFixed(0)}°`} accent="amber" />
-              <MetricBadge label="Head drop" value={`${Math.round(features.headYDrop * 100)}%`} accent="red" />
-              <MetricBadge label="Velocity" value={features.headYVelPeak.toFixed(2)} accent="blue" />
-              <MetricBadge label="Stillness" value={`${features.stillnessSec.toFixed(1)}s`} accent="green" />
-            </div>
-          )}
+          <input ref={replayInputRef} type="file" accept="video/*" className="hidden" onChange={handleReplayFile} />
+          {poseError && <p className="mt-3 text-xs text-rose-500">Model error: {poseError}</p>}
         </div>
-        <div className="space-y-4">
-          <div className="rounded-3xl border border-white/10 bg-slate-900/60 p-4 shadow-soft">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-semibold text-white">Detector controls</p>
-                <p className="text-xs text-white/60">Overlay, demo events, privacy</p>
-              </div>
-              <button
-                type="button"
-                onClick={handleDemoEvent}
-                className="rounded-xl bg-rose-500/20 px-3 py-1 text-xs font-semibold text-rose-100 hover:bg-rose-500/30"
-              >
-                Create demo event
-              </button>
-            </div>
-            <p className="mt-3 text-xs text-white/60">
-              All processing happens on-device. No frames leave the browser, and MediaPipe runs locally via WebAssembly.
-            </p>
-            {poseError && <p className="mt-2 text-xs text-rose-200">Model error: {poseError}</p>}
+        {features && (
+          <div className="grid gap-3 md:grid-cols-2">
+            <MetricBadge label="Torso tilt" value={`${features.torsoTiltDeg.toFixed(0)}°`} accent="amber" />
+            <MetricBadge label="Head drop" value={`${Math.round(features.headYDrop * 100)}%`} accent="red" />
+            <MetricBadge label="Velocity" value={features.headYVelPeak.toFixed(2)} accent="blue" />
+            <MetricBadge label="Stillness" value={`${features.stillnessSec.toFixed(1)}s`} accent="green" />
           </div>
-          <EventList events={events} />
+        )}
+        <EventList events={events} />
+        <div className="rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+          Processing is on-device. Nothing is uploaded.
         </div>
       </div>
-      <footer className="rounded-3xl border border-white/10 bg-slate-900/60 px-4 py-3 text-sm text-white/60">
-        All processing happens on-device. No video is uploaded.
-      </footer>
     </section>
   );
 }

@@ -34,7 +34,9 @@ export function useWebcam() {
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+        await videoRef.current.play().catch(() => {
+          // Browsers may block autoplay until there is a user gesture.
+        });
         setResolution({
           width: videoRef.current.videoWidth || 1280,
           height: videoRef.current.videoHeight || 720
