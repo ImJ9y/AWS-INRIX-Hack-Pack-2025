@@ -30,17 +30,14 @@ VITE_DEV_HTTPS=true pnpm dev
 
 ```
 src/
-├── App.tsx                // layout + hero
-├── components/
-│   ├── FallDetector.tsx   // video/canvas overlay, state machine, controls
-│   ├── EventList.tsx      // rolling feed of fall events
-│   └── MetricBadge.tsx    // compact KPI chips
-├── hooks/
-│   ├── useWebcam.ts       // getUserMedia lifecycle + error handling
-│   └── usePose.ts         // MediaPipe initialization + inference loop
-├── lib/fallLogic.ts       // heuristics, scoring, state machine, descriptions
-├── types.ts               // shared types, events, severities
-└── workers/poseWorker.ts  // optional worker stub
+├── App.tsx
+├── features/
+│   └── fall-detector/
+│       ├── FallDetector.tsx
+│       ├── hooks.ts
+│       ├── lib/fallLogic.ts
+│       └── types.ts
+└── main.tsx
 ```
 
 ## Features
@@ -55,10 +52,9 @@ src/
 
 ## Replay & debugging
 
-Use the “Replay from sample” control to select a short MP4/WebM clip. The app swaps the webcam feed for the uploaded file (still on-device) so you can reproduce scenarios without standing up.
+Use the “Upload clip” control to select a short MP4/WebM clip. The app swaps the webcam feed for the uploaded file (still on-device) so you can reproduce scenarios without standing up.
 
 ## Notes
 
-- The optional `poseWorker.ts` stub shows where to offload inference to a Web Worker if you need more headroom.
 - No analytics, no backend calls, and no data persistence are included by design.
 - TailwindCSS powers the UI chrome; canvas drawing handles the skeleton with `requestAnimationFrame` cadence.

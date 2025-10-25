@@ -1,4 +1,4 @@
-import { FallDetector } from "./components/FallDetector";
+import { FallDetector } from "./features/fall-detector/FallDetector";
 
 function App() {
   return (
