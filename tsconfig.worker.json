@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "lib": ["ES2020", "WebWorker"],
+    "types": []
+  },
+  "include": ["src/workers/**/*"]
+}
