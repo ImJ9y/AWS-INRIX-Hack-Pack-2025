@@ -1,0 +1,21 @@
+# Core Dependencies
+opencv-python>=4.8.0
+ultralytics>=8.0.0
+numpy>=1.24.0
+python-dotenv>=1.0.0
+
+# AWS Dependencies
+boto3>=1.28.57
+botocore>=1.31.57
+awscli>=1.29.57
+
+# Web Server Dependencies
+flask>=2.3.0
+pillow>=9.5.0
+
+# Optional: WebSocket support (if needed later)
+# flask-socketio>=5.3.0
+
+# Additional utilities
+requests>=2.31.0
+
