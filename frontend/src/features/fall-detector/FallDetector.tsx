@@ -159,25 +159,25 @@ export function FallDetector() {
     setFallAnalysis(null);
     
     try {
-      const message = `As an emergency medicine doctor, analyze this fall detection:
+      const message = `You are a calm and professional telehealth doctor reviewing an automated fall detection report.
 
 FALL EVENT DETAILS:
 - Severity: ${event.severity}
 - Time: ${new Date(event.timestamp).toLocaleString()}
 - Description: ${event.description}
 
-MEASURED METRICS:
+SENSOR DATA:
 - Torso Tilt: ${features.torsoTiltDeg.toFixed(1)}°
 - Head Drop: ${(features.headYDrop * 100).toFixed(1)}%
 - Velocity: ${features.headYVelPeak.toFixed(2)}
 - Stillness After Fall: ${features.stillnessSec.toFixed(1)}s
 
-Provide a brief medical assessment (2-3 sentences) from a doctor's perspective covering:
-1. What likely happened during this fall
-2. Potential injuries to watch for
-3. Recommended immediate action (call 911 or monitor)
+Provide a short, reassuring medical summary (2–3 sentences) that:
+1. Briefly describes what likely happened during the fall in natural, human terms
+2. Mentions mild or moderate injury risks only if appropriate (e.g., soreness, bruising, lightheadedness)
+3. Gives a calm recommendation (e.g., rest, self-check, or seek help only if symptoms appear)
 
-Keep it concise and professional.`;
+Keep the tone caring, clear, and realistic—avoid overly severe or dramatic language.`;
 
       const response = await fetch('http://localhost:5001/api/analyze_chat', {
         method: 'POST',
@@ -210,24 +210,27 @@ Keep it concise and professional.`;
     const stats = clipStatsRef.current;
     
     try {
-      const message = `As a physical therapist and movement specialist, analyze this video clip's movement patterns:
+      const message = `You are a physical therapist and movement specialist reviewing a short video clip of a person's movement.
 
-MOVEMENT ANALYSIS DATA:
-- Maximum Velocity: ${stats.maxVelocity.toFixed(2)}
-- Maximum Torso Tilt: ${stats.maxTorsoTilt.toFixed(1)}°
-- Maximum Head Drop: ${(stats.maxHeadDrop * 100).toFixed(1)}%
-- Average Confidence: ${(stats.avgConfidence * 100).toFixed(0)}%
-- Minimum Confidence: ${(stats.minConfidence * 100).toFixed(0)}%
+MOVEMENT DATA:
+- Max Velocity: ${stats.maxVelocity.toFixed(2)}
+- Max Torso Tilt: ${stats.maxTorsoTilt.toFixed(1)}°
+- Max Head Drop: ${(stats.maxHeadDrop * 100).toFixed(1)}%
+- Avg Confidence: ${(stats.avgConfidence * 100).toFixed(0)}%
+- Min Confidence: ${(stats.minConfidence * 100).toFixed(0)}%
 - Velocity Spikes: ${stats.velocitySpikes.length}
 - Tilt Recovery Time: ${stats.tiltRecoveryTime > 0 ? stats.tiltRecoveryTime.toFixed(1) + 's' : 'N/A'}
-- Total Frames Analyzed: ${stats.frameCount}
+- Total Frames: ${stats.frameCount}
 
-Provide a brief professional assessment (2-3 sentences) from a doctor's/therapist's perspective covering:
-1. What type of movement or activity this appears to be
-2. Any concerning patterns or movements observed
-3. Overall assessment (normal activity, concerning movement, or potential fall)
+Write a short, realistic narrative (2–3 sentences) describing what likely happened in this clip.
 
-Keep it natural, conversational, and professional - like you're explaining to a colleague.`;
+Your response should:
+1. Tell a brief story of the movement sequence (what the person was doing before, during, and after)
+2. Describe any noticeable or unusual motion patterns (e.g., stumble, turn, quick correction)
+3. End with a calm, clinical summary (e.g., normal adjustment, brief loss of balance, potential fall)
+
+Do **not** mention or repeat any data values or metrics in your answer.  
+Keep the tone natural, observational, and professional — like a therapist summarizing what they saw to a colleague.`;
 
       const response = await fetch('http://localhost:5001/api/analyze_chat', {
         method: 'POST',
@@ -613,14 +616,14 @@ function SummaryPanel({ summary, sampleLabel, aiAnalysis, aiLoading }: {
             <p className="text-sm font-semibold text-ink">Professional Assessment</p>
           </div>
           <p className="text-sm text-ink leading-relaxed whitespace-pre-wrap">{aiAnalysis}</p>
-          <p className="text-xs text-ink-muted italic">⚡ Powered by Gemini AI</p>
+          <p className="text-xs text-ink-muted italic">Powered by Gemini AI</p>
         </div>
       )}
       
       {/* Technical Metrics (Collapsible Details) */}
       <details className="group">
         <summary className="cursor-pointer text-xs font-semibold text-ink-muted hover:text-ink">
-          📊 Technical Metrics (click to expand)
+          Technical Metrics (click to expand)
         </summary>
         <ul className="mt-3 space-y-2">
           {summary.lines.map((line, index) => (
@@ -690,7 +693,7 @@ function FallLogPanel({ lastEvent, analysis, analysisLoading }: {
             <p className="text-sm font-semibold text-ink">Doctor's Assessment</p>
           </div>
           <p className="text-sm text-ink leading-relaxed whitespace-pre-wrap">{analysis}</p>
-          <p className="text-xs text-ink-muted italic mt-2">⚡ Powered by Gemini AI</p>
+          <p className="text-xs text-ink-muted italic mt-2">Powered by Gemini AI</p>
         </div>
       )}
     </Card>

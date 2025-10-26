@@ -18,7 +18,7 @@ class EmergencyImageAnalyzer:
         """Initialize the Gemini analyzer"""
         self.api_key = os.getenv('GOOGLE_API_KEY')
         if not self.api_key:
-            print("⚠️  Warning: GOOGLE_API_KEY not set in .env file")
+            print("  Warning: GOOGLE_API_KEY not set in .env file")
         
     def analyze_fall_image(self, image_data, severity, velocity, angle, 
                           torso_tilt=None, head_drop=None, stillness=None):
@@ -57,10 +57,10 @@ class EmergencyImageAnalyzer:
         metrics = f"""DETECTED METRICS:
 - Fall Severity: {severity}/10
 - Impact Velocity: {velocity:.2f}
-- Body Angle: {angle:.1f}°"""
+- Body Angle: {angle:.1f} degrees"""
         
         if torso_tilt is not None:
-            metrics += f"\n- Torso Tilt: {torso_tilt:.1f}°"
+            metrics += f"\n- Torso Tilt: {torso_tilt:.1f} degrees"
         if head_drop is not None:
             metrics += f"\n- Head Drop: {head_drop:.1f}%"
         if stillness is not None:
@@ -212,10 +212,10 @@ Provide a clear, concise, professional medical assessment suitable for emergency
         metrics = f"""DETECTED METRICS:
 - Fall Severity: {severity}/10
 - Impact Velocity: {velocity:.2f}
-- Body Angle: {angle:.1f}°"""
+- Body Angle: {angle:.1f} degrees"""
         
         if torso_tilt is not None:
-            metrics += f"\n- Torso Tilt: {torso_tilt:.1f}°"
+            metrics += f"\n- Torso Tilt: {torso_tilt:.1f} degrees"
         if head_drop is not None:
             metrics += f"\n- Head Drop: {head_drop:.1f}%"
         if stillness is not None:
@@ -326,22 +326,22 @@ Provide a clear, professional assessment suitable for emergency responders and m
 # Example usage and testing
 if __name__ == "__main__":
     print("\n" + "="*70)
-    print("🤖 GEMINI AI IMAGE ANALYZER")
+    print(" GEMINI AI IMAGE ANALYZER")
     print("="*70)
     
     analyzer = EmergencyImageAnalyzer()
     
-    print("\n📊 Provider: Google Gemini 2.5 Flash")
-    print("💰 Cost: FREE")
-    print("🚀 Speed: Fast (~2-5 seconds)")
-    print("📈 Quality: Excellent medical analysis")
+    print("\n Provider: Google Gemini 2.5 Flash")
+    print(" Cost: FREE")
+    print(" Speed: Fast (~2-5 seconds)")
+    print(" Quality: Excellent medical analysis")
     
     if analyzer.api_key:
-        print(f"\n✅ API Key configured: {analyzer.api_key[:20]}...")
-        print("\n💡 Ready to analyze fall detection images!")
+        print(f"\n API Key configured: {analyzer.api_key[:20]}...")
+        print("\n Ready to analyze fall detection images!")
     else:
-        print("\n❌ API Key NOT configured")
-        print("\n🔧 Setup Instructions:")
+        print("\n API Key NOT configured")
+        print("\n Setup Instructions:")
         print("   1. Go to: https://makersuite.google.com/app/apikey")
         print("   2. Click 'Create API Key'")
         print("   3. Copy your key")
@@ -349,7 +349,7 @@ if __name__ == "__main__":
         print("      GOOGLE_API_KEY=your_key_here")
     
     print("\n" + "="*70)
-    print("\n📝 Usage:")
+    print("\n Usage:")
     print("   from ai_image_analyzer import EmergencyImageAnalyzer")
     print("   analyzer = EmergencyImageAnalyzer()")
     print("   result = analyzer.analyze_fall_image(image_data, 8, 0.75, 65)")

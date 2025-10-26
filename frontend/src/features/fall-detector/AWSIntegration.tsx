@@ -432,7 +432,7 @@ function AIAnalysisPanel({ analysis, loading }: { analysis: AIAnalysis | null; l
         </div>
         {analysis.gemini_configured === false && (
           <div className="mt-3 rounded-lg bg-warn/10 p-3 text-xs text-warn">
-            <p className="font-semibold">⚠️ Gemini API not configured</p>
+            <p className="font-semibold">WARNING: Gemini API not configured</p>
             <p className="mt-1">Set GOOGLE_API_KEY in backend/.env file to enable AI analysis</p>
           </div>
         )}
