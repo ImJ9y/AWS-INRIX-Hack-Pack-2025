@@ -77,9 +77,8 @@ def test_imports():
         except ImportError:
             print(f" {package} ({pip_name}) - Run: pip install {pip_name}")
             all_good = False
-        all_good = False
 
-        return all_good
+    return all_good
 
 
 def main():
