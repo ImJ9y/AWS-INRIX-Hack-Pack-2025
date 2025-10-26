@@ -1,6 +1,6 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { AlertTriangle, Camera, Upload } from "lucide-react";
+import { AlertTriangle, Camera, RotateCcw, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { fadeIn } from "@/styles/motion";
 import { usePose, useWebcam } from "./hooks";
 import { INITIAL_STATE, computeFeatures, landmarksToPoseFrame, updateFallState } from "./lib/fallLogic";
-import { DetectorState, FallFeatures, PoseFrame } from "./types";
+import { DetectorState, FallEvent, FallFeatures, PoseFrame } from "./types";
 
 const skeletonConnections: [number, number][] = [
   [0, 1],
@@ -56,8 +56,10 @@ export function FallDetector() {
 
   const [state, setState] = useState(INITIAL_STATE);
   const [features, setFeatures] = useState<FallFeatures | null>(null);
+  const [lastEvent, setLastEvent] = useState<FallEvent | null>(null);
   const [sampleSrc, setSampleSrc] = useState<string | null>(null);
   const [sampleLabel, setSampleLabel] = useState<string | null>(null);
+  const [clipEnded, setClipEnded] = useState(false);
 
   const replayInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -77,6 +79,20 @@ export function FallDetector() {
   }, [sampleSrc]);
 
   useEffect(() => {
+    if (!sampleSrc) {
+      setClipEnded(false);
+    }
+  }, [sampleSrc]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const handleEnded = () => setClipEnded(true);
+    video.addEventListener("ended", handleEnded);
+    return () => video.removeEventListener("ended", handleEnded);
+  }, [sampleSrc, ready]);
+
+  useEffect(() => {
     if (!landmarks.length) return;
     const frame = landmarksToPoseFrame(landmarks, performance.now());
     if (!frame) return;
@@ -93,6 +109,9 @@ export function FallDetector() {
     if (update.changed) {
       stateRef.current = update.state;
       setState(update.state);
+    }
+    if (update.event) {
+      setLastEvent(update.event);
     }
   }, [landmarks]);
 
@@ -160,12 +179,14 @@ export function FallDetector() {
     const url = URL.createObjectURL(file);
     setSampleSrc(url);
     setSampleLabel(file.name);
+    setClipEnded(false);
     stop();
     if (videoRef.current) {
       videoRef.current.srcObject = null;
       videoRef.current.src = url;
-      videoRef.current.loop = true;
+      videoRef.current.loop = false;
       videoRef.current.muted = true;
+      videoRef.current.currentTime = 0;
       void videoRef.current.play();
     }
   };
@@ -178,7 +199,16 @@ export function FallDetector() {
     }
     setSampleSrc(null);
     setSampleLabel(null);
+    setClipEnded(false);
     await start();
+  };
+
+  const replayClip = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.currentTime = 0;
+    setClipEnded(false);
+    void video.play();
   };
 
   const summary = sampleSrc
@@ -196,17 +226,20 @@ export function FallDetector() {
     <div id="detector" className="space-y-6">
       <motion.div {...fadeIn} className="space-y-6">
         <Card className="space-y-6">
-          {showStatusBadge && (
-            <div className="flex justify-end">
-              <div className={cn("inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-medium", toneBadges[status.tone])}>
-                {status.tone === "danger" ? <AlertTriangle size={20} /> : <Camera size={20} />}
-                {status.label}
-              </div>
-            </div>
-          )}
           <div className="relative aspect-video overflow-hidden rounded-2xl border border-border bg-slate-50">
             <video ref={videoRef} className="h-full w-full object-cover" playsInline muted autoPlay />
             <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" />
+            {showStatusBadge && (
+              <div
+                className={cn(
+                  "absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide",
+                  toneBadges[status.tone]
+                )}
+              >
+                {status.tone === "danger" ? <AlertTriangle size={16} /> : <Camera size={16} />}
+                {status.label}
+              </div>
+            )}
             <div className="absolute right-4 top-4 flex flex-wrap items-center gap-2 text-xs font-medium">
               <Tooltip content="Current model confidence">
                 <span className="rounded-full bg-white/80 px-3 py-1 text-ink">{(confidence * 100).toFixed(0)}% confidence</span>
@@ -233,6 +266,12 @@ export function FallDetector() {
                 Use camera
               </Button>
             )}
+            {clipEnded && sampleSrc && (
+              <Button type="button" variant="ghost" size="sm" onClick={replayClip} aria-label="Replay uploaded clip">
+                <RotateCcw size={20} />
+                Play again
+              </Button>
+            )}
             <input
               id="demo-upload"
               ref={replayInputRef}
@@ -250,6 +289,7 @@ export function FallDetector() {
         </Card>
 
         {summary && <SummaryPanel sampleLabel={sampleLabel} summary={summary} />}
+        <FallLogPanel lastEvent={lastEvent} />
       </motion.div>
     </div>
   );
@@ -284,6 +324,38 @@ function SummaryPanel({ summary, sampleLabel }: { summary: { title: string; line
           </li>
         ))}
       </ul>
+    </Card>
+  );
+}
+
+function FallLogPanel({ lastEvent }: { lastEvent: FallEvent | null }) {
+  if (!lastEvent) {
+    return (
+      <Card className="space-y-2">
+        <p className="text-sm font-semibold text-ink">Fall log</p>
+        <p className="text-sm text-ink-muted">No fall captured yet.</p>
+      </Card>
+    );
+  }
+
+  const timeLabel = new Date(lastEvent.timestamp).toLocaleString([], { hour: "2-digit", minute: "2-digit", month: "short", day: "numeric" });
+  const severityTone = {
+    Low: "bg-success/10 text-success",
+    Moderate: "bg-warn/10 text-warn",
+    High: "bg-warn/10 text-warn",
+    Critical: "bg-danger/10 text-danger"
+  }[lastEvent.severity];
+
+  return (
+    <Card className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-semibold text-ink">Fall recorded</p>
+          <p className="text-xs text-ink-muted">{timeLabel}</p>
+        </div>
+        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${severityTone}`}>{lastEvent.severity}</span>
+      </div>
+      <p className="text-sm text-ink">{lastEvent.description}</p>
     </Card>
   );
 }

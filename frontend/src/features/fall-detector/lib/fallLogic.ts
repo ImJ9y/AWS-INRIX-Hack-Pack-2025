@@ -8,14 +8,16 @@ import {
   StateUpdate
 } from "../types";
 
-export const TILT_THRESHOLD_DEG = 60;
-export const DROP_THRESHOLD = 0.3;
-export const VEL_THRESHOLD = 0.45;
-export const STILLNESS_THRESHOLD_S = 4;
+export const TILT_THRESHOLD_DEG = 68;
+export const DROP_THRESHOLD = 0.38;
+export const VEL_THRESHOLD = 0.55;
+export const STILLNESS_THRESHOLD_S = 2.5;
 export const COOLDOWN_MS = 10_000;
 export const SUSPECT_WINDOW_MS = 800;
 
 const STILLNESS_LOOKBACK_MS = 5_000;
+const SMOOTHING_WINDOW = 5;
+const HEAD_LOOKBACK_MS = 1_200;
 
 export const INITIAL_STATE: DetectorState = {
   status: "idle",
@@ -40,24 +42,24 @@ function midpoint(a?: NormalizedLandmark, b?: NormalizedLandmark) {
 }
 
 export function computeFeatures(prevFrames: PoseFrame[], current: PoseFrame): FallFeatures {
-  const recentFrames = prevFrames.filter((f) => current.timestamp - f.timestamp <= 600);
-  const headValues = [...recentFrames.map((f) => f.headY), current.headY];
-  const headDrop = Math.max(...headValues) - Math.min(...headValues);
+  const recentFrames = prevFrames.filter((f) => current.timestamp - f.timestamp <= HEAD_LOOKBACK_MS);
+  const headSeries = smoothSeries([...recentFrames.map((f) => f.headY), current.headY], SMOOTHING_WINDOW);
+  const headDrop = Math.max(...headSeries) - Math.min(...headSeries);
 
-  const lastFrame = prevFrames[prevFrames.length - 1];
-  let headVelocity = 0;
-  if (lastFrame) {
-    const dy = current.headY - lastFrame.headY;
-    const dt = (current.timestamp - lastFrame.timestamp) / 1000;
-    headVelocity = dt > 0 ? dy / dt : 0;
-  }
-  const normalizedVelocity = Math.max(0, Math.min(1, headVelocity));
+  const velocitySamples = computeVelocitySamples([...recentFrames.slice(-SMOOTHING_WINDOW), current]);
+  const avgVelocity = velocitySamples.length
+    ? velocitySamples.reduce((sum, value) => sum + value, 0) / velocitySamples.length
+    : 0;
+  const normalizedVelocity = clamp(avgVelocity * 3.5, 0, 1);
+
+  const tiltSeries = smoothSeries([...recentFrames.map((f) => f.torsoTiltDeg), current.torsoTiltDeg], 4);
+  const smoothedTilt = tiltSeries[tiltSeries.length - 1] ?? current.torsoTiltDeg;
 
   const stillnessSince = computeStillness(prevFrames, current.timestamp);
 
   const score = (
     (headDrop >= DROP_THRESHOLD ? 2 : 0) +
-    (current.torsoTiltDeg >= TILT_THRESHOLD_DEG ? 2 : 0) +
+    (smoothedTilt >= TILT_THRESHOLD_DEG ? 2 : 0) +
     (normalizedVelocity >= VEL_THRESHOLD ? 1 : 0) +
     (stillnessSince >= STILLNESS_THRESHOLD_S ? 1 : 0)
   );
@@ -66,12 +68,38 @@ export function computeFeatures(prevFrames: PoseFrame[], current: PoseFrame): Fa
 
   return {
     headYDrop: clamp(headDrop, 0, 1),
-    headYVelPeak: clamp(normalizedVelocity, 0, 1),
-    torsoTiltDeg: Math.min(180, Math.max(0, current.torsoTiltDeg)),
+    headYVelPeak: normalizedVelocity,
+    torsoTiltDeg: Math.min(180, Math.max(0, smoothedTilt)),
     stillnessSec: stillnessSince,
     confidence,
     score
   };
+}
+
+function computeVelocitySamples(frames: PoseFrame[]): number[] {
+  if (frames.length < 2) return [];
+  const samples: number[] = [];
+  for (let i = 1; i < frames.length; i += 1) {
+    const curr = frames[i];
+    const prev = frames[i - 1];
+    const dt = (curr.timestamp - prev.timestamp) / 1000;
+    if (dt <= 0) continue;
+    const dy = Math.abs(curr.headY - prev.headY);
+    samples.push(dy / dt);
+  }
+  return samples;
+}
+
+function smoothSeries(values: number[], window: number): number[] {
+  if (values.length <= 1 || window <= 1) return values;
+  const result: number[] = [];
+  for (let i = 0; i < values.length; i += 1) {
+    const start = Math.max(0, i - window + 1);
+    const slice = values.slice(start, i + 1);
+    const avg = slice.reduce((sum, value) => sum + value, 0) / slice.length;
+    result.push(avg);
+  }
+  return result;
 }
 
 function computeStillness(frames: PoseFrame[], now: number): number {
@@ -85,7 +113,7 @@ function computeStillness(frames: PoseFrame[], now: number): number {
       Math.abs(frame.headY - prev.headY) +
       Math.abs(frame.hipY - prev.hipY) +
       Math.abs(frame.torsoTiltDeg - prev.torsoTiltDeg) / 180;
-    if (motion > 0.015) {
+    if (motion > 0.02) {
       lastMotionTs = frame.timestamp;
       break;
     }
