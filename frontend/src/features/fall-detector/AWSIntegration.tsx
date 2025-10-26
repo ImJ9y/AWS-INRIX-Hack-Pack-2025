@@ -1,11 +1,5 @@
-import { useEffect, useState } from "react";
-import { AlertTriangle, Antenna, Brain, CameraOff, Play, ShieldCheck, Sparkles } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Tooltip } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
+import { useEffect, useState, useRef } from "react";
+import clsx from "clsx";
 
 interface AWSStats {
   totalDetections: number;
@@ -16,10 +10,11 @@ interface AWSStats {
 }
 
 interface EmergencyAlert {
-  type: "emergency_alert" | "emergency_verified" | "emergency_cleared" | "emergency_verifying";
+  type: 'emergency_alert' | 'emergency_verified' | 'emergency_cleared' | 'emergency_verifying';
   severity?: number;
   message: string;
   remainingTime?: number;
+  videoUrl?: string;
 }
 
 interface Detection {
@@ -31,27 +26,16 @@ interface Detection {
   severity: number;
 }
 
-interface AIAnalysis {
-  analysis?: string;
-  provider?: string;
-  timestamp?: string;
-  emergency_data?: {
-    severity: number;
-    velocity: number;
-    angle: number;
-    timestamp: string;
-  };
-  error?: string;
-  message?: string;
-  gemini_configured?: boolean;
+interface CameraData {
+  frame: string;
+  detections: Detection[];
+  stats: AWSStats;
 }
-
-const FRAME_WIDTH = 640;
-const FRAME_HEIGHT = 360;
 
 export function AWSIntegration() {
   const [connected, setConnected] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
+  const [autoStarted, setAutoStarted] = useState(false); // Track if we've auto-started
   const [stats, setStats] = useState<AWSStats>({
     totalDetections: 0,
     totalEmergencies: 0,
@@ -62,434 +46,367 @@ export function AWSIntegration() {
   const [alerts, setAlerts] = useState<EmergencyAlert[]>([]);
   const [detections, setDetections] = useState<Detection[]>([]);
   const [videoFrame, setVideoFrame] = useState<string | null>(null);
-  const [tab, setTab] = useState("detections");
-  const [lastError, setLastError] = useState<string | null>(null);
-  const [aiAnalysis, setAIAnalysis] = useState<AIAnalysis | null>(null);
-  const [aiLoading, setAILoading] = useState(false);
+  
+  const socketRef = useRef<WebSocket | null>(null);
+  const videoRef = useRef<HTMLImageElement | null>(null);
+
+  // Auto-start camera when page loads and backend is connected
+  useEffect(() => {
+    const autoStartCamera = async () => {
+      // Only auto-start once when connected for the first time
+      if (!autoStarted && connected) {
+        setAutoStarted(true);
+        console.log('🔄 Auto-starting camera...');
+        // Wait a moment for backend to be fully ready
+        setTimeout(async () => {
+          try {
+            const response = await fetch('http://localhost:5001/api/start_camera', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+            });
+            const result = await response.json();
+            if (result.success) {
+              setCameraActive(true);
+              console.log('✅ Camera auto-started successfully');
+            } else {
+              console.log('⚠️ Camera already running or not available');
+            }
+          } catch (error) {
+            console.error('❌ Failed to auto-start camera:', error);
+          }
+        }, 1500);
+      }
+    };
+    
+    autoStartCamera();
+  }, [connected, autoStarted]);
 
   useEffect(() => {
-    let cancelled = false;
-
+    // Poll backend for updates instead of WebSocket
     const pollBackend = async () => {
       try {
-        const statusResponse = await fetch("http://localhost:5001/api/status");
-        if (!statusResponse.ok) throw new Error("Status offline");
-        const statusData = await statusResponse.json();
-        if (cancelled) return;
-        setConnected(true);
-        setLastError(null);
-        setCameraActive(Boolean(statusData.camera_active));
-
-        if (statusData.camera_active) {
-          const [frameResponse, detectionsResponse, aiResponse] = await Promise.all([
-            fetch("http://localhost:5001/api/latest_frame"),
-            fetch("http://localhost:5001/api/detections"),
-            fetch("http://localhost:5001/api/ai_analysis")
-          ]);
-          if (frameResponse.ok) {
-            const frameData = await frameResponse.json();
-            setVideoFrame(frameData.frame ?? null);
-          }
-          if (detectionsResponse.ok) {
-            const detectionsData = await detectionsResponse.json();
-            const mappedStats: AWSStats = {
-              totalDetections: detectionsData.stats.total_detections || 0,
-              totalEmergencies: detectionsData.stats.total_emergencies || 0,
-              peopleCount: detectionsData.stats.current_people_count || 0,
-              maxSeverity: detectionsData.stats.max_severity || 1,
-              emergencyActive: detectionsData.stats.emergency_active || false
-            };
-            setStats(mappedStats);
-
-            const mappedDetections: Detection[] = [];
-            Object.entries(detectionsData.detections).forEach(([personId, positions]: [string, any]) => {
-              if (!Array.isArray(positions) || !positions.length) return;
-              const lastPosition = positions[positions.length - 1];
-              const prevPosition = positions.length > 1 ? positions[positions.length - 2] : lastPosition;
-              const velocity = Math.sqrt(Math.pow(lastPosition[0] - prevPosition[0], 2) + Math.pow(lastPosition[1] - prevPosition[1], 2)) / 10;
-              const angle = (Math.atan2(lastPosition[1] - prevPosition[1], lastPosition[0] - prevPosition[0]) * 180) / Math.PI;
-              mappedDetections.push({
-                id: Number(personId),
-                bbox: [lastPosition[0] - 25, lastPosition[1] - 25, lastPosition[0] + 25, lastPosition[1] + 25],
-                center: lastPosition,
-                velocity: Math.min(velocity, 10),
-                angle: Math.abs(angle),
-                severity: detectionsData.stats.max_severity
-              });
-            });
-            setDetections(mappedDetections);
-
-            if (mappedStats.maxSeverity >= 8) {
-              addAlert({
-                type: "emergency_alert",
-                severity: mappedStats.maxSeverity,
-                message: `High severity detected (${mappedStats.maxSeverity}/10).`
-              });
-            } else if (mappedStats.maxSeverity >= 5) {
-              addAlert({
-                type: "emergency_verifying",
-                severity: mappedStats.maxSeverity,
-                message: `Moderate severity detected (${mappedStats.maxSeverity}/10).`
-              });
-            }
-          }
+        // Check if backend is running
+        const statusResponse = await fetch('http://localhost:5001/api/status');
+        if (statusResponse.ok) {
+          const statusData = await statusResponse.json();
+          setConnected(true);
           
-          // Get AI analysis
-          if (aiResponse.ok) {
-            const aiData = await aiResponse.json();
-            if (aiData.analysis || aiData.error || aiData.message) {
-              setAIAnalysis(aiData);
+          // Update camera active state from backend
+          setCameraActive(statusData.camera_active || false);
+          
+          // Get latest frame if camera is active
+          if (statusData.camera_active) {
+            const frameResponse = await fetch('http://localhost:5001/api/latest_frame');
+            if (frameResponse.ok) {
+              const frameData = await frameResponse.json();
+              if (frameData.frame) {
+                setVideoFrame(frameData.frame);
+              }
+            }
+            
+            // Get detection data
+            const detectionsResponse = await fetch('http://localhost:5001/api/detections');
+            if (detectionsResponse.ok) {
+              const detectionsData = await detectionsResponse.json();
+              
+              // Map backend stats to frontend format
+              setStats({
+                totalDetections: detectionsData.stats.total_detections || 0,
+                totalEmergencies: detectionsData.stats.total_emergencies || 0,
+                peopleCount: detectionsData.stats.current_people_count || 0,
+                maxSeverity: detectionsData.stats.max_severity || 1,
+                emergencyActive: detectionsData.stats.emergency_active || false
+              });
+              
+              // Convert backend detection data to frontend format
+              const detections: Detection[] = [];
+              Object.entries(detectionsData.detections).forEach(([personId, data]: [string, any]) => {
+                if (data && data.center && data.center.length >= 2) {
+                  detections.push({
+                    id: parseInt(personId),
+                    bbox: [data.center[0] - 25, data.center[1] - 25, data.center[0] + 25, data.center[1] + 25],
+                    center: data.center,
+                    velocity: data.velocity || 0,
+                    angle: data.angle || 0,
+                    severity: data.severity || 1
+                  });
+                }
+              });
+              setDetections(detections);
+              
+              // Check for high severity and add alerts
+              if (detectionsData.stats.max_severity >= 8) {
+                addAlert({
+                  type: 'emergency_alert',
+                  severity: detectionsData.stats.max_severity,
+                  message: `🚨 HIGH SEVERITY DETECTED! Severity: ${detectionsData.stats.max_severity}/10`
+                });
+              } else if (detectionsData.stats.max_severity >= 5) {
+                addAlert({
+                  type: 'emergency_verifying',
+                  severity: detectionsData.stats.max_severity,
+                  message: `⚠️ Moderate severity detected. Severity: ${detectionsData.stats.max_severity}/10`
+                });
+              }
             }
           }
         } else {
-          setDetections([]);
+          setConnected(false);
         }
       } catch (error) {
+        console.error('Error polling backend:', error);
         setConnected(false);
-        setLastError("Unable to reach the local AWS bridge.");
       }
     };
 
-    const interval = setInterval(pollBackend, 800);
+    // Poll every 500ms
+    const interval = setInterval(pollBackend, 500);
+    
+    // Initial poll
     pollBackend();
 
     return () => {
-      cancelled = true;
       clearInterval(interval);
     };
-  }, []);
+  }, [cameraActive]);
 
   const startCamera = async () => {
     try {
-      const response = await fetch("http://localhost:5001/api/start_camera", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" }
+      const response = await fetch('http://localhost:5001/api/start_camera', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
       });
+      
       const result = await response.json();
-      if (!response.ok || !result.success) {
-        throw new Error("Start failed");
+      if (result.success) {
+        setCameraActive(true);
+        addAlert({
+          type: 'emergency_cleared',
+          message: 'Camera started successfully!'
+        });
+      } else {
+        addAlert({
+          type: 'emergency_alert',
+          message: 'Failed to start camera. Please check if camera is available.'
+        });
       }
-      addAlert({ type: "emergency_cleared", message: "Camera started." });
-      setCameraActive(true);
     } catch (error) {
-      addAlert({ type: "emergency_alert", message: "Unable to start camera." });
+      console.error('Error starting camera:', error);
+      addAlert({
+        type: 'emergency_alert',
+        message: 'Error connecting to camera service'
+      });
     }
   };
 
   const stopCamera = async () => {
     try {
-      const response = await fetch("http://localhost:5001/api/stop_camera", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" }
+      const response = await fetch('http://localhost:5001/api/stop_camera', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
       });
+      
       const result = await response.json();
-      if (!response.ok || !result.success) {
-        throw new Error("Stop failed");
+      if (result.success) {
+        setCameraActive(false);
+        setVideoFrame(null);
+        addAlert({
+          type: 'emergency_cleared',
+          message: 'Camera stopped successfully!'
+        });
       }
-      addAlert({ type: "emergency_cleared", message: "Camera stopped." });
-      setCameraActive(false);
-      setVideoFrame(null);
     } catch (error) {
-      addAlert({ type: "emergency_alert", message: "Unable to stop camera." });
+      console.error('Error stopping camera:', error);
     }
   };
 
   const addAlert = (alert: EmergencyAlert) => {
-    setAlerts((prev) => [alert, ...prev].slice(0, 4));
+    setAlerts(prev => [alert, ...prev.slice(0, 4)]);
   };
 
-  const handleCameraToggle = (checked: boolean) => {
-    if (!connected) return;
-    if (checked) {
-      void startCamera();
-    } else {
-      void stopCamera();
-    }
-  };
-
-  const getAlertStyle = (type: EmergencyAlert["type"]) => {
+  const getAlertStyle = (type: EmergencyAlert['type']) => {
     switch (type) {
-      case "emergency_alert":
-        return "border-danger/30 bg-danger/5 text-danger";
-      case "emergency_verified":
-        return "border-warn/30 bg-warn/5 text-warn";
-      case "emergency_cleared":
-        return "border-success/30 bg-success/5 text-success";
-      case "emergency_verifying":
-        return "border-warn/30 bg-warn/5 text-warn";
+      case 'emergency_alert':
+      case 'emergency_verified':
+        return 'bg-red-100 text-red-700 border-red-200';
+      case 'emergency_cleared':
+        return 'bg-green-100 text-green-700 border-green-200';
+      case 'emergency_verifying':
+        return 'bg-yellow-100 text-yellow-700 border-yellow-200';
       default:
-        return "border-border bg-slate-50 text-ink";
+        return 'bg-gray-100 text-gray-700 border-gray-200';
     }
   };
 
-  const statusBadge = connected ? "bg-success/10 text-success" : "bg-danger/10 text-danger";
-
   return (
-    <Card className="space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
+    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-4 flex items-center justify-between">
         <div>
-          <p className="text-sm font-semibold text-ink">AWS camera bridge</p>
-          <p className="text-xs text-ink-muted">Python edge service + SNS dispatch</p>
+          <h3 className="text-lg font-semibold text-slate-900">AWS Integration</h3>
+          <p className="text-xs text-slate-500">Python backend + AWS services</p>
         </div>
-        <div className={cn("inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium", statusBadge)}>
-          <Antenna size={20} />
-          {connected ? "Connected" : "Offline"}
-        </div>
-      </header>
-
-      <div className="rounded-2xl border border-border bg-slate-50 p-4">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-semibold text-ink">Camera control</p>
-            <p className="text-sm text-ink-muted">Start a remote stream when onsite devices are idle.</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Switch checked={cameraActive} onCheckedChange={handleCameraToggle} aria-label="Toggle AWS camera" />
-            <span className="text-sm font-medium text-ink">{cameraActive ? "Camera active" : "Camera idle"}</span>
-          </div>
-        </div>
-        <div className="mt-4 flex flex-wrap gap-3">
-          <Button size="sm" onClick={startCamera} disabled={!connected || cameraActive} aria-label="Start AWS camera">
-            <Play size={20} />
-            Start
-          </Button>
-          <Button size="sm" variant="outline" onClick={stopCamera} disabled={!connected || !cameraActive} aria-label="Stop AWS camera">
-            <CameraOff size={20} />
-            Stop
-          </Button>
-        </div>
-        {lastError && <p className="mt-3 text-xs text-danger">{lastError}</p>}
-      </div>
-
-      <div className="space-y-4">
-        <div className="relative aspect-video overflow-hidden rounded-2xl border border-border bg-slate-100">
-          {videoFrame ? (
-            <>
-              <img src={`data:image/jpeg;base64,${videoFrame}`} alt="AWS camera feed" className="h-full w-full object-cover" />
-              {detections.map((detection) => {
-                const [x1, y1, x2, y2] = detection.bbox;
-                const left = (x1 / FRAME_WIDTH) * 100;
-                const top = (y1 / FRAME_HEIGHT) * 100;
-                const width = ((x2 - x1) / FRAME_WIDTH) * 100;
-                const height = ((y2 - y1) / FRAME_HEIGHT) * 100;
-                const tone = detection.severity >= 8 ? "border-danger bg-danger/10" : detection.severity >= 5 ? "border-warn bg-warn/10" : "border-success bg-success/10";
-                return (
-                  <span
-                    key={detection.id}
-                    className={cn("absolute rounded-xl border p-1 text-[10px] font-semibold text-ink", tone)}
-                    style={{ left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%` }}
-                  >
-                    P{detection.id}
-                  </span>
-                );
-              })}
-            </>
-          ) : (
-            <div className="flex h-full flex-col items-center justify-center text-sm text-ink-muted">
-              <CameraOff size={20} />
-              Waiting for frame
-            </div>
-          )}
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Stat label="Total detections" value={stats.totalDetections} />
-          <Stat label="Emergencies" value={stats.totalEmergencies} />
-          <Stat label="People on feed" value={stats.peopleCount} />
-          <Stat label="Max severity" value={`${stats.maxSeverity}/10`} />
-        </div>
-      </div>
-
-      <Tabs value={tab} onValueChange={setTab} className="w-full">
-        <TabsList>
-          <TabsTrigger value="detections">Detections</TabsTrigger>
-          <TabsTrigger value="alerts">Alerts</TabsTrigger>
-          <TabsTrigger value="ai">
-            <Brain size={16} className="mr-2" />
-            AI Analysis
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="detections">
-          {detections.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border/80 bg-slate-50 p-4 text-sm text-ink-muted">
-              No detections on the AWS feed.
-            </div>
-          ) : (
-            <ul className="space-y-3">
-              {detections.map((detection) => (
-                <li key={detection.id} className="rounded-2xl border border-border bg-white p-4 shadow-sm">
-                  <div className="flex items-center justify-between text-sm font-semibold text-ink">
-                    <span>Person {detection.id}</span>
-                    <span className={cn(
-                      "rounded-full px-3 py-1 text-xs font-semibold",
-                      detection.severity >= 8
-                        ? "bg-danger/10 text-danger"
-                        : detection.severity >= 5
-                        ? "bg-warn/10 text-warn"
-                        : "bg-success/10 text-success"
-                    )}>
-                      Severity {detection.severity}/10
-                    </span>
-                  </div>
-                  <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-ink-muted">
-                    <span>Velocity {detection.velocity.toFixed(2)}</span>
-                    <span>Angle {detection.angle.toFixed(1)}°</span>
-                    <span>Center ({detection.center[0]}, {detection.center[1]})</span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </TabsContent>
-        <TabsContent value="alerts">
-          {alerts.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border/80 bg-slate-50 p-4 text-sm text-ink-muted">
-              No alerts yet.
-            </div>
-          ) : (
-            <ul className="space-y-3">
-              {alerts.map((alert, index) => (
-                <li key={`${alert.type}-${index}`} className={cn("rounded-2xl border p-4 text-sm", getAlertStyle(alert.type))}>
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold">{alert.message}</span>
-                    <Tooltip content="Maximum severity across tracked people">
-                      <ShieldCheck size={20} className="text-ink" />
-                    </Tooltip>
-                  </div>
-                  {alert.remainingTime && <p className="text-xs text-ink-muted">Time left {alert.remainingTime.toFixed(1)}s</p>}
-                </li>
-              ))}
-            </ul>
-          )}
-        </TabsContent>
-        <TabsContent value="ai">
-          <AIAnalysisPanel analysis={aiAnalysis} loading={aiLoading} />
-        </TabsContent>
-      </Tabs>
-
-      <div className="rounded-2xl border border-border bg-slate-50 px-4 py-3 text-xs text-ink-muted">
         <div className="flex items-center gap-2">
-          <ShieldCheck size={20} />
-          AWS services monitored: S3, DynamoDB, SNS, CloudWatch.
+          <div className={clsx(
+            "h-3 w-3 rounded-full",
+            connected ? "bg-green-500" : "bg-red-500"
+          )} />
+          <span className="text-xs text-slate-500">
+            {connected ? "Connected" : "Disconnected"}
+          </span>
         </div>
       </div>
-    </Card>
-  );
-}
 
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded-2xl border border-border bg-white p-4 shadow-sm">
-      <p className="text-xs uppercase tracking-[0.18em] text-ink-muted">{label}</p>
-      <p className="mt-2 text-lg font-semibold text-ink">{value}</p>
-    </div>
-  );
-}
+      {/* Auto-start Status */}
+      {autoStarted && cameraActive && (
+        <div className="mb-3 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700">
+          ✨ Camera auto-started when page loaded. Live data is being streamed!
+        </div>
+      )}
 
-function AIAnalysisPanel({ analysis, loading }: { analysis: AIAnalysis | null; loading: boolean }) {
-  if (loading) {
-    return (
-      <div className="rounded-2xl border border-border bg-white p-6 text-center">
-        <Sparkles size={32} className="mx-auto mb-3 animate-pulse text-purple-500" />
-        <p className="text-sm font-semibold text-ink">Analyzing with Gemini AI...</p>
-        <p className="mt-1 text-xs text-ink-muted">Please wait while we process the fall detection</p>
+      {/* Camera Controls */}
+      <div className="mb-4 flex gap-2">
+        <button
+          onClick={startCamera}
+          disabled={!connected || cameraActive}
+          className={clsx(
+            "flex-1 rounded-full px-4 py-2 text-sm font-medium transition-colors",
+            connected && !cameraActive
+              ? "bg-green-100 text-green-700 hover:bg-green-200"
+              : "bg-gray-100 text-gray-400 cursor-not-allowed"
+          )}
+        >
+          {autoStarted && cameraActive ? "🔄 Restart Camera" : "Start AWS Camera"}
+        </button>
+        <button
+          onClick={stopCamera}
+          disabled={!connected || !cameraActive}
+          className={clsx(
+            "flex-1 rounded-full px-4 py-2 text-sm font-medium transition-colors",
+            connected && cameraActive
+              ? "bg-red-100 text-red-700 hover:bg-red-200"
+              : "bg-gray-100 text-gray-400 cursor-not-allowed"
+          )}
+        >
+          Stop Camera
+        </button>
       </div>
-    );
-  }
 
-  if (!analysis) {
-    return (
-      <div className="rounded-2xl border border-dashed border-border/80 bg-slate-50 p-6 text-center">
-        <Brain size={32} className="mx-auto mb-3 text-ink-muted" />
-        <p className="text-sm font-semibold text-ink">No AI analysis yet</p>
-        <p className="mt-1 text-xs text-ink-muted">
-          Gemini AI will analyze falls automatically when detected
-        </p>
-      </div>
-    );
-  }
-
-  if (analysis.error) {
-    return (
-      <div className="rounded-2xl border border-danger/30 bg-danger/5 p-6">
-        <div className="flex items-start gap-3">
-          <AlertTriangle size={24} className="flex-shrink-0 text-danger" />
-          <div>
-            <p className="text-sm font-semibold text-danger">Analysis Error</p>
-            <p className="mt-1 text-xs text-ink-muted">{analysis.error}</p>
+      {/* Video Stream - Hidden */}
+      {/* {videoFrame && (
+        <div className="mb-4 rounded-2xl overflow-hidden bg-black relative">
+          <img
+            ref={videoRef}
+            src={`data:image/jpeg;base64,${videoFrame}`}
+            alt="AWS Camera Feed"
+            className="w-full h-48 object-cover"
+          />
+          <div className="absolute border-2 text-white text-xs p-1 rounded"
+            style={{
+              left: `${(detection.center[0] - 25) * 100 / 1920}%`, // Assuming 1920px width
+              top: `${(detection.center[1] - 25) * 100 / 1080}%`, // Assuming 1080px height
+              width: '50px',
+              height: '50px',
+              borderColor: detection.severity >= 8 ? '#ef4444' : detection.severity >= 5 ? '#f59e0b' : '#10b981',
+              backgroundColor: detection.severity >= 8 ? 'rgba(239, 68, 68, 0.3)' : detection.severity >= 5 ? 'rgba(245, 158, 11, 0.3)' : 'rgba(16, 185, 129, 0.3)'
+            }}
+          >
+            <div className="text-center">
+              <div className="font-bold">P{detection.id}</div>
+              <div className="text-xs">S:{detection.severity}</div>
+            </div>
           </div>
         </div>
-      </div>
-    );
-  }
+      )} */}
 
-  if (analysis.message) {
-    return (
-      <div className="rounded-2xl border border-border bg-white p-6">
-        <div className="flex items-center gap-2 text-sm text-ink-muted">
-          <Brain size={20} />
-          <span>{analysis.message}</span>
+      {/* AWS Statistics */}
+      <div className="mb-4 grid grid-cols-3 gap-3">
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+          <p className="text-xs text-slate-500">Emergencies</p>
+          <p className="text-lg font-semibold text-slate-900">{stats.totalEmergencies}</p>
         </div>
-        {analysis.gemini_configured === false && (
-          <div className="mt-3 rounded-lg bg-warn/10 p-3 text-xs text-warn">
-            <p className="font-semibold">⚠️ Gemini API not configured</p>
-            <p className="mt-1">Set GOOGLE_API_KEY in backend/.env file to enable AI analysis</p>
-          </div>
-        )}
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+          <p className="text-xs text-slate-500">People Count</p>
+          <p className="text-lg font-semibold text-slate-900">{stats.peopleCount}</p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+          <p className="text-xs text-slate-500">Max Severity</p>
+          <p className="text-lg font-semibold text-slate-900">{stats.maxSeverity}/10</p>
+        </div>
       </div>
-    );
-  }
 
-  return (
-    <div className="space-y-4">
-      {/* Emergency Data Summary */}
-      {analysis.emergency_data && (
-        <div className="rounded-2xl border border-danger/30 bg-danger/5 p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <AlertTriangle size={20} className="text-danger" />
-            <p className="text-sm font-semibold text-danger">Emergency Detected</p>
-          </div>
-          <div className="grid grid-cols-3 gap-3 text-xs">
-            <div>
-              <p className="text-ink-muted">Severity</p>
-              <p className="mt-1 font-semibold text-ink">{analysis.emergency_data.severity}/10</p>
-            </div>
-            <div>
-              <p className="text-ink-muted">Velocity</p>
-              <p className="mt-1 font-semibold text-ink">{analysis.emergency_data.velocity.toFixed(2)}</p>
-            </div>
-            <div>
-              <p className="text-ink-muted">Angle</p>
-              <p className="mt-1 font-semibold text-ink">{analysis.emergency_data.angle.toFixed(1)}°</p>
-            </div>
+      {/* Current Detections */}
+      {detections.length > 0 && (
+        <div className="mb-4">
+          <h4 className="text-sm font-semibold text-slate-900 mb-2">Current Detections</h4>
+          <div className="space-y-2">
+            {detections.map((detection) => (
+              <div
+                key={detection.id}
+                className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+              >
+                <div className="flex justify-between items-center">
+                  <span className="font-medium">Person {detection.id}</span>
+                  <span className={clsx(
+                    "rounded-full px-2 py-1 text-xs font-semibold",
+                    detection.severity >= 8
+                      ? "bg-red-100 text-red-700"
+                      : detection.severity >= 5
+                      ? "bg-yellow-100 text-yellow-700"
+                      : "bg-green-100 text-green-700"
+                  )}>
+                    Severity {detection.severity}/10
+                  </span>
+                </div>
+                <div className="mt-1 grid grid-cols-3 gap-2 text-xs text-slate-500">
+                  <div>Velocity: {detection.velocity.toFixed(2)}</div>
+                  <div>Angle: {detection.angle.toFixed(1)}°</div>
+                  <div>Center: ({detection.center[0]}, {detection.center[1]})</div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* AI Analysis */}
-      {analysis.analysis && (
-        <div className="rounded-2xl border border-purple-200 bg-gradient-to-br from-purple-50 to-blue-50 p-6">
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Sparkles size={20} className="text-purple-600" />
-              <p className="text-sm font-semibold text-ink">
-                {analysis.provider || "Gemini AI Analysis"}
-              </p>
-            </div>
-            {analysis.timestamp && (
-              <p className="text-xs text-ink-muted">
-                {new Date(analysis.timestamp).toLocaleTimeString()}
-              </p>
-            )}
-          </div>
-          
-          <div className="prose prose-sm max-w-none">
-            <div className="whitespace-pre-wrap text-sm text-ink leading-relaxed">
-              {analysis.analysis}
-            </div>
+      {/* Emergency Alerts */}
+      {alerts.length > 0 && (
+        <div>
+          <h4 className="text-sm font-semibold text-slate-900 mb-2">Emergency Alerts</h4>
+          <div className="space-y-2 max-h-32 overflow-y-auto">
+            {alerts.map((alert, index) => (
+              <div
+                key={index}
+                className={clsx(
+                  "rounded-lg border px-3 py-2 text-sm font-medium",
+                  getAlertStyle(alert.type)
+                )}
+              >
+                {alert.message}
+                {alert.remainingTime && (
+                  <div className="text-xs mt-1">
+                    Time remaining: {alert.remainingTime.toFixed(1)}s
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
+
+      {/* AWS Services Status */}
+      <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-slate-500">AWS Services</span>
+          <div className="flex items-center gap-2">
+            <div className="h-2 w-2 rounded-full bg-green-500" />
+            <span className="text-slate-700">S3, DynamoDB, SNS, CloudWatch</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
