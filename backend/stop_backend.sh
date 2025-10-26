@@ -3,7 +3,7 @@
 # Fall Detection Backend Stop Script
 # Stops the backend server
 
-echo "🛑 Stopping Fall Detection Backend..."
+echo "Stopping Fall Detection Backend..."
 echo "==================================="
 
 # Check if backend is running
@@ -19,12 +19,12 @@ if pgrep -f "simple_backend.py" > /dev/null; then
     
     # Verify it stopped
     if ! pgrep -f "simple_backend.py" > /dev/null; then
-        echo "✅ Backend stopped successfully!"
+        echo "Backend stopped successfully!"
     else
-        echo "⚠️  Force killing backend..."
+        echo "Force killing backend..."
         pkill -9 -f "simple_backend.py"
-        echo "✅ Backend forcefully stopped!"
+        echo "Backend forcefully stopped!"
     fi
 else
-    echo "ℹ️  Backend is not running"
+    echo "Backend is not running"
 fi

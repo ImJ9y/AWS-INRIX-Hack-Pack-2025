@@ -136,7 +136,7 @@ python3 simple_backend.py
 ### Monitoring
 - Live detection data via `/api/detections`
 - Debug display shows: `P{pid}: S{severity}/10 V{velocity} A{angle}° Vn{v_norm}`
-- Indicators: H↓ (head down), S🔄 (shape change), I! (impact), P✓ (pattern detected)
+- Indicators: H↓ (head down), S (shape change), I! (impact), P (pattern detected)
 
 ## Next Steps
 
