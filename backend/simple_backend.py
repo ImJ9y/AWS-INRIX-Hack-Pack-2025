@@ -30,13 +30,16 @@ class SimpleFallDetector:
     def __init__(self):
         self.model = YOLO("yolov8n.pt")
         self.aws_services = self.init_aws_services()
-        self.fall_threshold_velocity = float(os.getenv('FALL_THRESHOLD_VELOCITY', '0.5'))  # Less sensitive - only real falls
-        self.fall_threshold_angle = float(os.getenv('FALL_THRESHOLD_ANGLE', '60'))  # Less sensitive - only sharp angles
-        self.emergency_severity_threshold = int(os.getenv('EMERGENCY_SEVERITY_THRESHOLD', '7'))  # Only real emergencies
+        self.fall_threshold_velocity = float(os.getenv('FALL_THRESHOLD_VELOCITY', '3.0'))  # Detect falls from any angle
+        self.fall_threshold_angle = float(os.getenv('FALL_THRESHOLD_ANGLE', '30'))  # More sensitive - detect all types of falls
+        self.emergency_severity_threshold = int(os.getenv('EMERGENCY_SEVERITY_THRESHOLD', '6'))  # Detect moderate falls
         self.verification_time = float(os.getenv('VERIFICATION_TIME_SECONDS', '5.0'))
         
         # Fall detection state
         self.person_positions = {}
+        self.person_velocities = {}  # Track velocity history
+        self.person_angles = {}  # Track angle history
+        self.person_sizes = {}  # Track bounding box sizes (for position in frame)
         self.emergency_active = False
         self.emergency_start_time = None
         self.frame_count = 0
@@ -49,6 +52,7 @@ class SimpleFallDetector:
         self.current_people_count = 0
         self.max_severity = 1
         self.last_frame = None
+        self.fall_cooldown = {}  # Prevent duplicate fall detection
         
     def init_aws_services(self):
         """Initialize AWS services"""
@@ -63,66 +67,152 @@ class SimpleFallDetector:
             print(f"⚠️ AWS services not available: {e}")
             return None
     
-    def calculate_velocity(self, person_id, new_position):
-        """Calculate velocity of person movement"""
+    def calculate_velocity(self, person_id, new_position, box_size=None):
+        """Calculate velocity with improved filtering and smoothing"""
         if person_id not in self.person_positions:
             self.person_positions[person_id] = []
+            self.person_velocities[person_id] = []
         
         self.person_positions[person_id].append(new_position)
+        if box_size:
+            self.person_sizes[person_id] = box_size
         
-        # Keep only last 5 positions
-        if len(self.person_positions[person_id]) > 5:
-            self.person_positions[person_id] = self.person_positions[person_id][-5:]
+        # Keep only last 10 positions for better averaging
+        if len(self.person_positions[person_id]) > 10:
+            self.person_positions[person_id] = self.person_positions[person_id][-10:]
         
-        if len(self.person_positions[person_id]) < 2:
+        if len(self.person_positions[person_id]) < 3:
             return 0.0
         
-        # Calculate velocity (pixels per frame)
         positions = self.person_positions[person_id]
-        dx = positions[-1][0] - positions[-2][0]
-        dy = positions[-1][1] - positions[-2][1]
-        velocity = np.sqrt(dx*dx + dy*dy)
         
-        return velocity
+        # Calculate velocity from multiple recent frames (more stable)
+        velocities = []
+        for i in range(1, min(4, len(positions))):  # Use last 3 frames
+            dx = positions[-i][0] - positions[-i-1][0]
+            dy = positions[-i][1] - positions[-i-1][1]
+            
+            # Normalize by frame time (assuming ~30 FPS)
+            dt = 1.0  # 1 frame
+            vx = dx / dt
+            vy = dy / dt
+            
+            # Weight downward movement heavily (falling)
+            if vy > 0:  # Moving down
+                velocity = np.sqrt(vx*vx + vy*vy * 3.0)  # Weight downward 3x
+            else:  # Moving up (unlikely to be fall)
+                velocity = np.sqrt(vx*vx + vy*vy) * 0.3
+            
+            velocities.append(velocity)
+        
+        # Average the velocities for stability
+        avg_velocity = np.mean(velocities)
+        
+        # Store velocity history for trend analysis
+        self.person_velocities[person_id].append(avg_velocity)
+        if len(self.person_velocities[person_id]) > 5:
+            self.person_velocities[person_id] = self.person_velocities[person_id][-5:]
+        
+        return avg_velocity
     
     def calculate_angle(self, person_id):
-        """Calculate body angle (simplified)"""
-        if person_id not in self.person_positions or len(self.person_positions[person_id]) < 2:
+        """Calculate body angle with improved multi-frame analysis"""
+        if person_id not in self.person_positions or len(self.person_positions[person_id]) < 4:
             return 0.0
         
         positions = self.person_positions[person_id]
-        if len(positions) < 2:
+        
+        # Calculate angles from multiple frame pairs for stability
+        angles = []
+        
+        # Analyze last 4 frames
+        for i in range(1, min(4, len(positions))):
+            dx = positions[-i][0] - positions[-i-1][0]
+            dy = positions[-i][1] - positions[-i-1][1]
+            
+            # Detect downward movement (fall)
+            if dy > 3:  # Significant downward movement
+                if abs(dx) > 1:
+                    angle = np.degrees(np.arctan(abs(dy) / abs(dx)))
+                    if angle > 30:  # Steep angle
+                        angles.append(min(angle, 85))  # Cap at 85 degrees
+                else:
+                    angles.append(85)  # Nearly vertical fall
+            
+            # Detect sideways falls with some downward component
+            elif abs(dx) > 8 and dy > 2:  # Lateral movement with slight downward
+                angle = np.degrees(np.arctan(abs(dx) / abs(dy)))
+                # Convert to tilt angle (how far from vertical)
+                angles.append(min(angle, 60))
+        
+        if not angles:
             return 0.0
         
-        # Simple angle calculation based on movement direction
-        dx = positions[-1][0] - positions[-2][0]
-        dy = positions[-1][1] - positions[-2][1]
+        # Store angle history
+        avg_angle = np.mean(angles)
+        if person_id not in self.person_angles:
+            self.person_angles[person_id] = []
+        self.person_angles[person_id].append(avg_angle)
+        if len(self.person_angles[person_id]) > 5:
+            self.person_angles[person_id] = self.person_angles[person_id][-5:]
         
-        if dx == 0:
-            return 90.0 if dy > 0 else 0.0
-        
-        angle = np.degrees(np.arctan(abs(dy) / abs(dx)))
-        return angle
+        return avg_angle
     
-    def assess_severity(self, velocity, angle):
-        """Assess fall severity (1-10 scale)"""
+    def assess_severity(self, velocity, angle, person_id=None):
+        """Assess fall severity with velocity trend analysis"""
         severity = 1
         
-        # Velocity component (0-5 points) - less sensitive
-        # Only trigger on significant velocity changes (actual falls)
+        # Velocity component (0-4 points) with trend analysis
         if velocity > self.fall_threshold_velocity:
-            # More gradual increase for velocity
-            excess_velocity = velocity - self.fall_threshold_velocity
-            severity += min(5, int(excess_velocity * 5))  # Reduced multiplier
+            # Check velocity trend (increasing velocity = more severe fall)
+            velocity_trend = 1.0
+            if person_id and person_id in self.person_velocities:
+                vel_history = self.person_velocities[person_id]
+                if len(vel_history) >= 3:
+                    # Check if velocity is increasing (acceleration)
+                    recent_avg = np.mean(vel_history[-2:])
+                    earlier_avg = np.mean(vel_history[:-2])
+                    if recent_avg > earlier_avg * 1.2:  # 20% increase
+                        velocity_trend = 1.5  # Boost severity if accelerating
+            
+            max_velocity = self.fall_threshold_velocity * 2.5
+            if velocity >= max_velocity:
+                velocity_score = 4 * velocity_trend
+            else:
+                velocity_score = ((velocity - self.fall_threshold_velocity) / 
+                                 (max_velocity - self.fall_threshold_velocity)) * 4 * velocity_trend
+            
+            severity += min(4, int(velocity_score))
         
-        # Angle component (0-5 points) - less sensitive
-        # Only trigger on sharp angles (actual falls)
+        # Angle component (0-4 points) with trend analysis
         if angle > self.fall_threshold_angle:
-            # More gradual increase for angle
-            excess_angle = angle - self.fall_threshold_angle
-            severity += min(5, int(excess_angle / 15))  # Less sensitive
+            # Check angle trend (increasing angle = more severe fall)
+            angle_trend = 1.0
+            if person_id and person_id in self.person_angles:
+                angle_history = self.person_angles[person_id]
+                if len(angle_history) >= 2:
+                    # Check if angle is increasing
+                    if angle_history[-1] > angle_history[-2] * 1.1:  # 10% increase
+                        angle_trend = 1.3  # Boost severity if angle increasing
+            
+            max_angle = self.fall_threshold_angle + 50
+            if angle >= max_angle:
+                angle_score = 4 * angle_trend
+            else:
+                angle_score = ((angle - self.fall_threshold_angle) / 
+                              (max_angle - self.fall_threshold_angle)) * 4 * angle_trend
+            
+            severity += min(4, int(angle_score))
         
-        return min(10, severity)
+        # Bonus point if both indicators are present (definite fall)
+        if velocity > self.fall_threshold_velocity and angle > self.fall_threshold_angle:
+            severity += 1
+        
+        # Bonus point if very high velocity (rapid fall)
+        if velocity > self.fall_threshold_velocity * 3:
+            severity += 1
+        
+        return min(10, max(1, severity))
     
     def store_emergency_video(self, frame):
         """Store emergency video frame in S3"""
@@ -191,7 +281,7 @@ class SimpleFallDetector:
         results = self.model(frame, verbose=False)
         
         person_count = 0
-        max_severity = 1
+        max_severity = self.max_severity  # Keep previous max severity
         detections = []
         
         for r in results:
@@ -213,13 +303,14 @@ class SimpleFallDetector:
                             # Get person position (center of bounding box)
                             center_x = int((x1 + x2) / 2)
                             center_y = int((y1 + y2) / 2)
+                            box_size = (width, height)
                             
                             # Calculate velocity and angle
-                            velocity = self.calculate_velocity(person_count, (center_x, center_y))
+                            velocity = self.calculate_velocity(person_count, (center_x, center_y), box_size)
                             angle = self.calculate_angle(person_count)
                             
-                            # Assess severity
-                            severity = self.assess_severity(velocity, angle)
+                            # Assess severity with person_id for trend analysis
+                            severity = self.assess_severity(velocity, angle, person_count)
                             max_severity = max(max_severity, severity)
                             
                             # Store detection data
