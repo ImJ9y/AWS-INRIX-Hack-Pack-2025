@@ -23,9 +23,9 @@ def test_aws_services():
         dynamodb = boto3.resource('dynamodb')
         sns = boto3.client('sns')
         cloudwatch = boto3.client('cloudwatch')
-        print("✅ AWS services initialized")
+        print(" AWS services initialized")
     except Exception as e:
-        print(f"❌ Failed to initialize AWS services: {e}")
+        print(f" Failed to initialize AWS services: {e}")
         return False
     
     # Test S3
@@ -42,18 +42,18 @@ def test_aws_services():
             Body=test_content,
             ContentType='text/plain'
         )
-        print(f"   ✅ S3 upload successful: s3://{bucket_name}/{test_key}")
+        print(f"    S3 upload successful: s3://{bucket_name}/{test_key}")
         
         # Clean up test file
         s3.delete_object(Bucket=bucket_name, Key=test_key)
-        print("   ✅ S3 cleanup successful")
+        print("    S3 cleanup successful")
         
     except Exception as e:
-        print(f"   ❌ S3 test failed: {e}")
+        print(f"    S3 test failed: {e}")
         return False
     
     # Test DynamoDB
-    print("\n📊 Testing DynamoDB...")
+    print("\n Testing DynamoDB...")
     try:
         table_name = os.getenv('AWS_DYNAMODB_EVENTS_TABLE', 'fall-detection-events-dev')
         table = dynamodb.Table(table_name)
@@ -71,7 +71,7 @@ def test_aws_services():
         }
         
         table.put_item(Item=test_item)
-        print(f"   ✅ DynamoDB put successful: {test_item['event_id']}")
+        print(f"    DynamoDB put successful: {test_item['event_id']}")
         
         # Clean up test item
         table.delete_item(
@@ -80,10 +80,10 @@ def test_aws_services():
                 'timestamp': test_item['timestamp']
             }
         )
-        print("   ✅ DynamoDB cleanup successful")
+        print("    DynamoDB cleanup successful")
         
     except Exception as e:
-        print(f"   ❌ DynamoDB test failed: {e}")
+        print(f"    DynamoDB test failed: {e}")
         return False
     
     # Test SNS
@@ -102,10 +102,10 @@ def test_aws_services():
             Message=json.dumps(test_message),
             Subject='Fall Detection AWS Integration Test'
         )
-        print("   ✅ SNS publish successful")
+        print("    SNS publish successful")
         
     except Exception as e:
-        print(f"   ❌ SNS test failed: {e}")
+        print(f"    SNS test failed: {e}")
         return False
     
     # Test CloudWatch
@@ -129,14 +129,14 @@ def test_aws_services():
                 }
             ]
         )
-        print("   ✅ CloudWatch metrics published")
+        print("    CloudWatch metrics published")
         
     except Exception as e:
-        print(f"   ❌ CloudWatch test failed: {e}")
+        print(f"    CloudWatch test failed: {e}")
         return False
     
     print("\n🎉 All AWS services working correctly!")
-    print("✅ Your fall detection system is ready for demo!")
+    print(" Your fall detection system is ready for demo!")
     return True
 
 if __name__ == "__main__":

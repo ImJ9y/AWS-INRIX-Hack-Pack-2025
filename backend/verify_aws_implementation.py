@@ -33,31 +33,31 @@ def check_s3_implementation():
         try:
             s3.head_bucket(Bucket=bucket_name)
             checks['Bucket Configuration'] = True
-            print(f"✅ S3 bucket exists: {bucket_name}")
+            print(f" S3 bucket exists: {bucket_name}")
         except Exception as e:
-            print(f"❌ S3 bucket not found: {e}")
+            print(f" S3 bucket not found: {e}")
             return checks
         
         # Check upload capability by listing
         try:
             response = s3.list_objects_v2(Bucket=bucket_name, Prefix='emergency-images/', MaxKeys=1)
             checks['Path Structure'] = True
-            print(f"✅ Emergency images path configured: emergency-images/")
+            print(f" Emergency images path configured: emergency-images/")
         except Exception as e:
-            print(f"⚠️ No images found yet in emergency-images/")
+            print(f" No images found yet in emergency-images/")
         
         checks['Upload Capability'] = True
-        print("✅ S3 upload capability verified")
+        print(" S3 upload capability verified")
         
     except Exception as e:
-        print(f"❌ S3 verification failed: {e}")
+        print(f" S3 verification failed: {e}")
     
     return checks
 
 def check_dynamodb_implementation():
     """Verify DynamoDB event logging implementation"""
     print("\n" + "="*60)
-    print("📊 VERIFYING DYNAMODB EVENT LOGGING")
+    print(" VERIFYING DYNAMODB EVENT LOGGING")
     print("="*60)
     
     checks = {
@@ -77,15 +77,15 @@ def check_dynamodb_implementation():
             table = dynamodb.Table(events_table)
             table.load()
             checks['Events Table'] = True
-            print(f"✅ Events table exists: {events_table}")
+            print(f" Events table exists: {events_table}")
             
             # Check schema
             if 'event_id' in [attr['AttributeName'] for attr in table.attribute_definitions]:
                 checks['Schema Correct'] = True
-                print("✅ Event schema includes: event_id, timestamp, severity, velocity, angle")
+                print(" Event schema includes: event_id, timestamp, severity, velocity, angle")
             
         except Exception as e:
-            print(f"❌ Events table not found: {e}")
+            print(f" Events table not found: {e}")
         
         # Check Analytics table
         analytics_table = os.getenv('AWS_DYNAMODB_ANALYTICS_TABLE', 'fall-detection-analytics-dev')
@@ -93,9 +93,9 @@ def check_dynamodb_implementation():
             table = dynamodb.Table(analytics_table)
             table.load()
             checks['Analytics Table'] = True
-            print(f"✅ Analytics table exists: {analytics_table}")
+            print(f" Analytics table exists: {analytics_table}")
         except Exception as e:
-            print(f"⚠️ Analytics table not found: {e}")
+            print(f" Analytics table not found: {e}")
         
         # Check Tracking table
         tracking_table = os.getenv('AWS_DYNAMODB_TRACKING_TABLE', 'fall-detection-emergency-tracking-dev')
@@ -103,12 +103,12 @@ def check_dynamodb_implementation():
             table = dynamodb.Table(tracking_table)
             table.load()
             checks['Tracking Table'] = True
-            print(f"✅ Tracking table exists: {tracking_table}")
+            print(f" Tracking table exists: {tracking_table}")
         except Exception as e:
-            print(f"⚠️ Tracking table not found: {e}")
+            print(f" Tracking table not found: {e}")
         
     except Exception as e:
-        print(f"❌ DynamoDB verification failed: {e}")
+        print(f" DynamoDB verification failed: {e}")
     
     return checks
 
@@ -132,7 +132,7 @@ def check_cloudwatch_implementation():
         
         # Check namespace configuration
         checks['Metrics Namespace'] = True
-        print(f"✅ Metrics namespace configured: {namespace}")
+        print(f" Metrics namespace configured: {namespace}")
         
         # Check log groups
         try:
@@ -141,11 +141,11 @@ def check_cloudwatch_implementation():
             )
             if response['logGroups']:
                 checks['Log Groups'] = True
-                print("✅ CloudWatch log groups exist")
+                print(" CloudWatch log groups exist")
             else:
-                print("⚠️ No log groups found yet")
+                print(" No log groups found yet")
         except Exception as e:
-            print(f"⚠️ Could not verify log groups: {e}")
+            print(f" Could not verify log groups: {e}")
         
         # Test metric publishing
         try:
@@ -158,12 +158,12 @@ def check_cloudwatch_implementation():
                 }]
             )
             checks['Metric Publishing'] = True
-            print("✅ Metric publishing capability verified")
+            print(" Metric publishing capability verified")
         except Exception as e:
-            print(f"❌ Could not publish test metric: {e}")
+            print(f" Could not publish test metric: {e}")
         
     except Exception as e:
-        print(f"❌ CloudWatch verification failed: {e}")
+        print(f" CloudWatch verification failed: {e}")
     
     return checks
 
@@ -192,16 +192,16 @@ def check_integration_points():
             item = response['Items'][0]
             if 'video_url' in item or 's3_url' in item:
                 integrations['S3 to DynamoDB Link'] = True
-                print("✅ Events include S3 image references")
+                print(" Events include S3 image references")
         
         integrations['Event to CloudWatch Flow'] = True
-        print("✅ Event metrics flow to CloudWatch configured")
+        print(" Event metrics flow to CloudWatch configured")
         
         integrations['Emergency Workflow'] = True
-        print("✅ Emergency workflow: Detect → Store → Alert → Monitor")
+        print(" Emergency workflow: Detect → Store → Alert → Monitor")
         
     except Exception as e:
-        print(f"⚠️ Integration check incomplete: {e}")
+        print(f" Integration check incomplete: {e}")
     
     return integrations
 
@@ -220,7 +220,7 @@ def main():
     
     # Summary
     print("\n" + "="*60)
-    print("📋 IMPLEMENTATION SUMMARY")
+    print(" IMPLEMENTATION SUMMARY")
     print("="*60)
     
     total_checks = 0
@@ -232,9 +232,9 @@ def main():
             total_checks += 1
             if status:
                 passed_checks += 1
-                print(f"  ✅ {check}")
+                print(f"   {check}")
             else:
-                print(f"  ❌ {check}")
+                print(f"   {check}")
     
     percentage = (passed_checks / total_checks * 100) if total_checks > 0 else 0
     
@@ -243,23 +243,23 @@ def main():
     print("="*60 + "\n")
     
     # Requirements checklist
-    print("📋 REQUIREMENTS CHECKLIST:")
+    print(" REQUIREMENTS CHECKLIST:")
     print("="*60)
     
     requirements = [
-        ("✅ AWS S3 - Video/Image Storage", results['S3 Storage'].get('Upload Capability', False)),
-        ("✅ Emergency Images Storage", results['S3 Storage'].get('Bucket Configuration', False)),
-        ("✅ Audit Trail", results['S3 Storage'].get('Path Structure', False)),
-        ("✅ AWS DynamoDB - Event Database", results['DynamoDB Logging'].get('Events Table', False)),
-        ("✅ Event Logging", results['DynamoDB Logging'].get('Events Table', False)),
-        ("✅ Analytics Data Storage", results['DynamoDB Logging'].get('Schema Correct', False)),
-        ("✅ AWS CloudWatch - System Monitoring", results['CloudWatch Monitoring'].get('Metrics Namespace', False)),
-        ("✅ Real-time Metrics", results['CloudWatch Monitoring'].get('Metric Publishing', False)),
-        ("✅ Performance Monitoring", results['CloudWatch Monitoring'].get('Log Groups', False)),
+        (" AWS S3 - Video/Image Storage", results['S3 Storage'].get('Upload Capability', False)),
+        (" Emergency Images Storage", results['S3 Storage'].get('Bucket Configuration', False)),
+        (" Audit Trail", results['S3 Storage'].get('Path Structure', False)),
+        (" AWS DynamoDB - Event Database", results['DynamoDB Logging'].get('Events Table', False)),
+        (" Event Logging", results['DynamoDB Logging'].get('Events Table', False)),
+        (" Analytics Data Storage", results['DynamoDB Logging'].get('Schema Correct', False)),
+        (" AWS CloudWatch - System Monitoring", results['CloudWatch Monitoring'].get('Metrics Namespace', False)),
+        (" Real-time Metrics", results['CloudWatch Monitoring'].get('Metric Publishing', False)),
+        (" Performance Monitoring", results['CloudWatch Monitoring'].get('Log Groups', False)),
     ]
     
     for req, status in requirements:
-        status_icon = "✅" if status else "❌"
+        status_icon = "" if status else ""
         print(f"{status_icon} {req}")
     
     print("\n" + "="*60 + "\n")

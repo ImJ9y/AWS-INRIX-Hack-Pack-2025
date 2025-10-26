@@ -94,7 +94,7 @@ class SimpleFallDetector:
                 'cloudwatch': boto3.client('cloudwatch')
             }
         except Exception as e:
-            print(f"⚠️ AWS services not available: {e}")
+            print(f"AWS services not available: {e}")
             return None
     
     def ema(self, store_name, pid, value, alpha=0.3):
@@ -458,7 +458,7 @@ class SimpleFallDetector:
     def store_emergency_video(self, frame):
         """Store emergency video frame in S3"""
         if not self.aws_services:
-            print("📹 [DEMO] Would store video in S3")
+            print("[DEMO] Would store video in S3")
             return "demo-video-url"
         
         try:
@@ -477,17 +477,17 @@ class SimpleFallDetector:
                 ContentType='image/jpeg'
             )
             
-            print(f"📹 Emergency image stored: s3://{bucket_name}/emergency-images/{filename}")
+            print(f"Emergency image stored: s3://{bucket_name}/emergency-images/{filename}")
             return f"s3://{bucket_name}/emergency-images/{filename}"
             
         except Exception as e:
-            print(f"❌ Failed to store emergency video: {e}")
+            print(f"Failed to store emergency video: {e}")
             return None
     
     def save_emergency_event(self, severity, velocity, angle, video_url):
         """Save emergency event to DynamoDB"""
         if not self.aws_services:
-            print(f"📊 [DEMO] Would save event: Severity {severity}/10")
+            print(f" [DEMO] Would save event: Severity {severity}/10")
             return
         
         try:
@@ -509,10 +509,10 @@ class SimpleFallDetector:
             }
             
             table.put_item(Item=item)
-            print(f"📊 Emergency event saved: {event_id}")
+            print(f" Emergency event saved: {event_id}")
             
         except Exception as e:
-            print(f"❌ Failed to save emergency event: {e}")
+            print(f" Failed to save emergency event: {e}")
     
     def process_frame(self, frame):
         """Process a single frame for fall detection with pose keypoints"""
@@ -725,13 +725,13 @@ class SimpleFallDetector:
                 emergency_data = {
                     'type': 'emergency_alert',
                     'severity': max_severity,
-                    'message': f'🚨 FALL DETECTED - AI Analysis Starting...',
+                    'message': f' FALL DETECTED - AI Analysis Starting...',
                     'verification_time': self.verification_time,
                     'video_url': video_url
                 }
                 
-                print(f"🚨 Emergency triggered! Severity: {max_severity}/10")
-                print(f"📊 Saving data for AI analysis: velocity={avg_velocity:.2f}, angle={avg_angle:.1f}°")
+                print(f" Emergency triggered! Severity: {max_severity}/10")
+                print(f" Saving data for AI analysis: velocity={avg_velocity:.2f}, angle={avg_angle:.1f}°")
             else:
                 # Continue monitoring during active emergency
                 elapsed_time = time.time() - self.emergency_start_time
@@ -741,13 +741,13 @@ class SimpleFallDetector:
                     emergency_data = {
                         'type': 'emergency_verified',
                         'severity': max_severity,
-                        'message': f'✅ Verified: Person still showing fall indicators. Ready for AI analysis and emergency response.',
+                        'message': f' Verified: Person still showing fall indicators. Ready for AI analysis and emergency response.',
                         'elapsed_time': elapsed_time,
                         'ai_analysis_ready': True
                     }
                     
-                    print(f"✅ Emergency verified after {elapsed_time:.1f}s")
-                    print("🤖 Would trigger: AI analysis → 911 call")
+                    print(f" Emergency verified after {elapsed_time:.1f}s")
+                    print(" Would trigger: AI analysis → 911 call")
                 else:
                     # Still in verification period
                     remaining_time = self.verification_time - elapsed_time
@@ -768,10 +768,10 @@ class SimpleFallDetector:
                     self.emergency_start_time = None
                     emergency_data = {
                         'type': 'emergency_cleared',
-                        'message': '✅ Person recovered - Emergency cleared',
+                        'message': ' Person recovered - Emergency cleared',
                         'recovery_time': elapsed_time
                     }
-                    print(f"✅ Emergency cleared after {elapsed_time:.1f}s - Person recovered")
+                    print(f" Emergency cleared after {elapsed_time:.1f}s - Person recovered")
                 else:
                     # Still monitoring for verification
                     emergency_data = {
@@ -931,17 +931,17 @@ def get_detections():
     })
 
 if __name__ == '__main__':
-    print("🚀 Starting Simple Fall Detection Backend")
+    print(" Starting Simple Fall Detection Backend")
     print("=" * 50)
-    print("✅ Features:")
+    print(" Features:")
     print("   • Real-time camera detection")
     print("   • REST API endpoints")
     print("   • AWS services integration")
     print("")
-    print("🌐 Server will be available at:")
+    print(" Server will be available at:")
     print("   • HTTP: http://localhost:5001")
     print("")
-    print("📋 Available endpoints:")
+    print(" Available endpoints:")
     print("   • GET  /api/status")
     print("   • POST /api/start_camera")
     print("   • POST /api/stop_camera")

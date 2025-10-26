@@ -26,7 +26,7 @@ def convert_decimal_to_float(obj):
 def view_dynamodb_events():
     """View events from DynamoDB"""
     print("\n" + "="*60)
-    print("📊 DYNAMODB EVENTS TABLE")
+    print(" DYNAMODB EVENTS TABLE")
     print("="*60)
     
     try:
@@ -54,7 +54,7 @@ def view_dynamodb_events():
             print("No events found in database")
             
     except Exception as e:
-        print(f"❌ Error accessing DynamoDB: {e}")
+        print(f" Error accessing DynamoDB: {e}")
 
 def view_analytics():
     """View analytics data"""
@@ -87,7 +87,7 @@ def view_analytics():
             print("No analytics data found")
             
     except Exception as e:
-        print(f"❌ Error accessing analytics: {e}")
+        print(f" Error accessing analytics: {e}")
 
 def view_s3_files():
     """View S3 bucket contents"""
@@ -114,12 +114,12 @@ def view_s3_files():
             print("No files found in S3 bucket")
             
     except Exception as e:
-        print(f"❌ Error accessing S3: {e}")
+        print(f" Error accessing S3: {e}")
 
 def view_emergency_tracking():
     """View emergency tracking data"""
     print("\n" + "="*60)
-    print("🚨 EMERGENCY TRACKING")
+    print(" EMERGENCY TRACKING")
     print("="*60)
     
     try:
@@ -147,7 +147,7 @@ def view_emergency_tracking():
             print("No active emergencies")
             
     except Exception as e:
-        print(f"❌ Error accessing emergency tracking: {e}")
+        print(f" Error accessing emergency tracking: {e}")
 
 def main():
     print("\n🔍 VIEWING STORED DATA FROM AWS SERVICES")
@@ -162,7 +162,7 @@ def main():
     view_emergency_tracking()
     
     print("\n" + "="*60)
-    print("✅ Data retrieval complete!")
+    print(" Data retrieval complete!")
     print("="*60 + "\n")
 
 if __name__ == "__main__":

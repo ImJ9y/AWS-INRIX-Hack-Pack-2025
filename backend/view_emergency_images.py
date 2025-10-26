@@ -21,7 +21,7 @@ def list_emergency_images():
         bucket_name = os.getenv('AWS_S3_EMERGENCY_BUCKET')
         
         if not bucket_name:
-            print("\n❌ Error: AWS_S3_EMERGENCY_BUCKET not configured")
+            print("\n Error: AWS_S3_EMERGENCY_BUCKET not configured")
             print("   Please create a .env file with your AWS configuration")
             print("   See .env for reference")
             return 0
@@ -70,15 +70,15 @@ def list_emergency_images():
                     print("-" * 70)
         
         if image_count == 0:
-            print("\n⚠️  No emergency images found in S3 bucket")
+            print("\n  No emergency images found in S3 bucket")
             print("   Images will appear here after fall detection events")
         else:
-            print(f"\n✅ Found {image_count} emergency image(s)")
+            print(f"\n Found {image_count} emergency image(s)")
         
         return image_count
         
     except Exception as e:
-        print(f"❌ Error accessing S3: {e}")
+        print(f" Error accessing S3: {e}")
         return 0
 
 def download_latest_image():
@@ -96,7 +96,7 @@ def download_latest_image():
         )
         
         if 'Contents' not in response or len(response['Contents']) == 0:
-            print("\n⚠️  No emergency images available to download")
+            print("\n  No emergency images available to download")
             return None
         
         # Sort by last modified to get the latest
@@ -113,11 +113,11 @@ def download_latest_image():
         print(f"\n📥 Downloading latest image: {filename}")
         s3.download_file(bucket_name, latest['Key'], download_path)
         
-        print(f"✅ Image downloaded to: {download_path}")
+        print(f" Image downloaded to: {download_path}")
         return download_path
         
     except Exception as e:
-        print(f"❌ Error downloading image: {e}")
+        print(f" Error downloading image: {e}")
         return None
 
 def show_image_stats():
@@ -148,7 +148,7 @@ def show_image_stats():
                         oldest_date = modified
         
         print("\n" + "="*70)
-        print("📊 EMERGENCY IMAGES STATISTICS")
+        print(" EMERGENCY IMAGES STATISTICS")
         print("="*70)
         
         if count > 0:
@@ -165,7 +165,7 @@ def show_image_stats():
         print("="*70 + "\n")
         
     except Exception as e:
-        print(f"❌ Error getting statistics: {e}")
+        print(f" Error getting statistics: {e}")
 
 def main():
     print("\n🔍 VIEWING EMERGENCY IMAGES")
@@ -186,7 +186,7 @@ def main():
         print("        (URLs are valid for 1 hour)")
         print("="*70)
     
-    print("\n✅ Image listing complete!\n")
+    print("\n Image listing complete!\n")
 
 if __name__ == "__main__":
     main()
