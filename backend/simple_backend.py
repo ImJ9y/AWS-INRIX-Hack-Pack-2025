@@ -677,6 +677,13 @@ class SimpleFallDetector:
         _, buffer = cv2.imencode('.jpg', self.last_frame)
         frame_base64 = base64.b64encode(buffer).decode('utf-8')
         return frame_base64
+    # def upload_frame_to_s3(self, frame):
+    #     """Save frame to file"""
+    #     uuid = str(uuid.uuid4())
+    #     s3 = self.aws_services['s3']
+    #     s3.upload_fileobj(frame, os.getenv('AWS_S3_CATCH_BUCKET'), f'fall_detection/{uuid}.jpg')
+    #     print(f" Frame uploaded to {os.getenv('AWS_S3_CATCH_BUCKET')}/fall_detection/{uuid}.jpg")
+    #     return uuid
     
     def analyze_with_gemini(self, frame, severity, velocity, angle):
         """Analyze emergency with Gemini AI (runs in background)"""
@@ -686,7 +693,7 @@ class SimpleFallDetector:
             # Convert frame to base64
             _, buffer = cv2.imencode('.jpg', frame)
             frame_base64 = base64.b64encode(buffer).decode('utf-8')
-            
+            # uuid = self.upload_frame_to_s3(frame)
             # Analyze with Gemini
             result = gemini_analyzer.analyze_fall_image(
                 frame_base64,
