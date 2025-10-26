@@ -23,7 +23,7 @@ def list_emergency_images():
         if not bucket_name:
             print("\n❌ Error: AWS_S3_EMERGENCY_BUCKET not configured")
             print("   Please create a .env file with your AWS configuration")
-            print("   See env.example for reference")
+            print("   See .env for reference")
             return 0
         
         region = os.getenv('AWS_DEFAULT_REGION', 'us-east-1')
