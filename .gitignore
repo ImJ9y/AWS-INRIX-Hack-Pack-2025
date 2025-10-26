@@ -17,8 +17,10 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
 lib64/
+# Allow src/features/fall-detector/lib/ (contains source code)
+!src/features/fall-detector/lib/
+!frontend/src/features/fall-detector/lib/
 parts/
 sdist/
 var/
