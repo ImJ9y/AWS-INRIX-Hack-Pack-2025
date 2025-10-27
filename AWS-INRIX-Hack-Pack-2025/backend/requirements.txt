@@ -1,0 +1,29 @@
+# Core Dependencies
+opencv-python>=4.8.0
+ultralytics>=8.0.0
+numpy>=1.24.0
+python-dotenv>=1.0.0
+
+# AWS Dependencies
+boto3>=1.28.57
+botocore>=1.31.57
+awscli>=1.29.57
+
+# Web Server Dependencies
+flask>=2.3.0
+pillow>=9.5.0
+requests>=2.31.0
+
+# Optional: MQTT support
+paho-mqtt>=1.6.0
+
+# Optional: ML/Data Analysis
+scikit-learn>=1.3.0
+pandas>=2.0.0
+joblib>=1.3.0
+
+# Note: aws-iot-device-sdk-python removed due to Python 3.9 compatibility issues
+# If needed, install manually: pip install awsiotsdk
+
+
+

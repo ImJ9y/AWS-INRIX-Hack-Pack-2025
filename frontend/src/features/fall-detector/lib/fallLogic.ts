@@ -8,10 +8,11 @@ import {
   StateUpdate
 } from "../types";
 
-export const TILT_THRESHOLD_DEG = 68;
-export const DROP_THRESHOLD = 0.38;
-export const VEL_THRESHOLD = 0.55;
-export const STILLNESS_THRESHOLD_S = 2.5;
+// Lowered thresholds for easier fall detection and testing
+export const TILT_THRESHOLD_DEG = 45;  // Was 68 - now triggers at 45 degree lean
+export const DROP_THRESHOLD = 0.25;     // Was 0.38 - now triggers at 25% head drop
+export const VEL_THRESHOLD = 0.35;      // Was 0.55 - now triggers at lower velocity
+export const STILLNESS_THRESHOLD_S = 1.5; // Was 2.5 - now needs 1.5s stillness
 export const COOLDOWN_MS = 10_000;
 export const SUSPECT_WINDOW_MS = 800;
 
@@ -153,7 +154,7 @@ export function updateFallState(prevState: DetectorState, features: FallFeatures
   const tiltHit = features.torsoTiltDeg >= TILT_THRESHOLD_DEG;
   const velHit = features.headYVelPeak >= VEL_THRESHOLD;
   const stillnessHit = features.stillnessSec >= STILLNESS_THRESHOLD_S;
-  const severeScore = features.score >= 5;
+  const severeScore = features.score >= 3; // Lowered from 5 to 3 for easier detection
 
   if (state.status === "cooldown" && state.cooldownUntil && now >= state.cooldownUntil) {
     state.status = "idle";

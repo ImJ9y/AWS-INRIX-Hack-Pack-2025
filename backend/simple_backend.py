@@ -20,6 +20,19 @@ from flask_cors import CORS
 import base64
 from io import BytesIO
 import sys
+try:
+    import pyttsx3
+except Exception as _e:
+    pyttsx3 = None
+try:
+    import speech_recognition as sr
+except Exception as _e:
+    sr = None
+
+try:
+    from twilio.rest import Client as TwilioClient
+except Exception as _e:
+    TwilioClient = None
 sys.path.append(os.path.join(os.path.dirname(__file__), 'analyze_fall'))
 
 # Load environment variables
@@ -42,10 +55,15 @@ CORS(app)  # Enable CORS for all routes
 class SimpleFallDetector:
     def __init__(self):
         # Use pose model for better fall detection
+        self.voice_thread_active = False 
         self.model = YOLO("yolov8n-pose.pt")
         self.imgsz = int(os.getenv("YOLO_IMG_SIZE", "640"))
         self.use_tracking = True
         self.tracker_cfg = os.getenv("TRACKER_CFG", "bytetrack.yaml")
+        self.voice_thread_active = False        # whether a session is running
+        self.voice_lock = threading.Lock()      # serialize starts
+        self.last_voice_at = 0.0                # last session start time (epoch seconds)
+        self.voice_cooldown_s = int(os.getenv("VOICE_COOLDOWN_SECONDS", "45"))
         
         self.aws_services = self.init_aws_services()
         self.fall_threshold_velocity = float(os.getenv('FALL_THRESHOLD_VELOCITY', '0.8'))  # Normalized velocity threshold
@@ -379,6 +397,161 @@ class SimpleFallDetector:
             
         except Exception as e:
             print(f" Failed to save emergency event: {e}")
+    def voice_confirmation_and_call(self):
+        """
+        Speak to the person (TTS), listen for 'yes'/'no' (ASR),
+        and optionally place a Twilio call to the caregiver.
+        Runs on a background thread; guarded to avoid overlap.
+        """
+        if self.voice_thread_active:
+            print(" [voice] Session already active; skipping.")
+            return
+
+        self.voice_thread_active = True
+        try:
+            # Lazy imports so the server doesn't crash if a dependency is missing
+            try:
+                import pyttsx3
+            except Exception as e:
+                print(f" [voice] pyttsx3 not available: {e}")
+                pyttsx3 = None
+            try:
+                import speech_recognition as sr
+            except Exception as e:
+                print(f" [voice] SpeechRecognition not available: {e}")
+                sr = None
+            try:
+                from twilio.rest import Client as TwilioClient
+            except Exception as e:
+                print(f" [voice] Twilio client not available: {e}")
+                TwilioClient = None
+
+            # Env
+            TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID")
+            TWILIO_AUTH_TOKEN  = os.environ.get("TWILIO_AUTH_TOKEN")
+            TWILIO_FROM_NUMBER = os.environ.get("TWILIO_FROM_NUMBER")
+            CAREGIVER_PHONE    = os.environ.get("CAREGIVER_PHONE")
+            POLLY_VOICE        = os.environ.get("POLLY_VOICE", "Polly.Joanna")
+            LANG               = os.environ.get("LANG", "en-US")
+
+            # Build Twilio client if possible
+            twilio_client = None
+            if all([TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER, CAREGIVER_PHONE]) and TwilioClient:
+                try:
+                    twilio_client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+                except Exception as e:
+                    print(f" [twilio] init error: {e}")
+
+            # If voice libs are missing, just log and exit gracefully
+            if not (pyttsx3 and sr):
+                print(" [voice] Voice deps missing; cannot run voice flow.")
+                return
+
+            import re, time
+            YES_RE = re.compile(r"\b(yes|yeah|yep|please\s*call|call\s*help|help)\b", re.I)
+            NO_RE  = re.compile(r"\b(no|nope|don'?t|do\s*not|i'?m\s*ok(?:ay)?|i\s*am\s*ok(?:ay)?|i'?m\s*fine|i\s*am\s*fine|not\s*now|stay)\b", re.I)
+
+            # TTS
+            try:
+                engine = pyttsx3.init()
+                engine.setProperty("rate", int(os.getenv("TTS_RATE", "180")))
+            except Exception as e:
+                print(f" [voice] TTS init error: {e}")
+                engine = None
+
+            def speak(text: str):
+                if engine is None:
+                    print(f"[voice] {text}")
+                    return
+                try:
+                    engine.say(text)
+                    engine.runAndWait()
+                except Exception as e:
+                    print(f" [voice] TTS error: {e}")
+
+            # ASR
+            def listen_once(timeout=6, phrase_time_limit=5, lang=LANG) -> str:
+                try:
+                    r = sr.Recognizer()
+                    with sr.Microphone() as source:
+                        r.adjust_for_ambient_noise(source, duration=0.6)
+                        audio = r.listen(source, timeout=timeout, phrase_time_limit=phrase_time_limit)
+                    try:
+                        return r.recognize_google(audio, language=lang)
+                    except sr.UnknownValueError:
+                        return ""
+                    except sr.RequestError as e:
+                        print(f"[warn] recognition request error: {e}")
+                        return ""
+                except Exception as e:
+                    print(f"[voice] microphone/listen error: {e}")
+                    return ""
+
+            def ask_and_get_intent(max_attempts=2) -> str:
+                prompt = ("I detected a fall. Are you okay? "
+                        "Say 'yes' if you want me to call help. "
+                        "Say 'no' if you don't want me to call and you'd like me to stay with you.")
+                for attempt in range(1, max_attempts + 1):
+                    speak(prompt)
+                    print(f"[listen] waiting for reply (attempt {attempt}/{max_attempts})…")
+                    utterance = listen_once()
+                    print(f"[heard] {utterance!r}")
+                    if not utterance:
+                        speak("I didn't catch that.")
+                        continue
+                    if YES_RE.search(utterance):
+                        return "YES"
+                    if NO_RE.search(utterance):
+                        return "NO"
+                    speak("Sorry, I didn't understand.")
+                return ""
+
+            def call_caregiver():
+                if not twilio_client:
+                    print(" [twilio] missing credentials/client; cannot place call.")
+                    return
+                message = "Fall detected. Please check on the person now."
+                twiml = f'<Response><Say voice="{POLLY_VOICE}">{message}</Say></Response>'
+                try:
+                    call = twilio_client.calls.create(
+                        to=CAREGIVER_PHONE,
+                        from_=TWILIO_FROM_NUMBER,
+                        twiml=twiml
+                    )
+                    print(f"[twilio] call SID: {getattr(call, 'sid', 'unknown')}")
+                except Exception as e:
+                    print(f"[twilio] call error: {e}")
+
+            # Main flow
+            intent = ask_and_get_intent(max_attempts=2)
+            if intent == "YES":
+                speak("Okay. Let me call help now.")
+                call_caregiver()
+                speak("Help has been alerted. I will stay with you until they arrive.")
+            elif intent == "NO":
+                speak("Okay. I'm here with you. Let's take a deep breath together.")
+                time.sleep(1)
+                speak("If anything changes and you want me to call help, just say 'call help'.")
+                for _ in range(3):
+                    utterance = listen_once(timeout=6, phrase_time_limit=4, lang=LANG)
+                    if utterance and YES_RE.search(utterance):
+                        speak("Understood. Calling help now.")
+                        call_caregiver()
+                        break
+                speak("I'm staying with you. You're not alone.")
+            else:
+                speak("I couldn't understand. I won't call right now, but I'm staying with you. "
+                    "Say 'call help' any time if you need me to call.")
+                for _ in range(3):
+                    utterance = listen_once(timeout=6, phrase_time_limit=4, lang=LANG)
+                    if utterance and YES_RE.search(utterance):
+                        speak("Understood. Calling help now.")
+                        call_caregiver()
+                        break
+                speak("I'm here with you.")
+        finally:
+            self.voice_thread_active = False
+
     
     def process_frame(self, frame):
         """Process a single frame for pose-based fall detection"""
@@ -859,6 +1032,24 @@ def analyze_chat():
             'type': type(e).__name__
         }), 500
 
+@app.route('/api/call_caregiver', methods=['POST'])
+def call_caregiver():
+    if getattr(fall_detector, "voice_thread_active", False):
+        return jsonify({'started': False, 'message': 'Voice session already active'}), 409
+
+    # cooldown?
+    remaining = fall_detector.voice_cooldown_s - (time.time() - fall_detector.last_voice_at)
+    if remaining > 0:
+        return jsonify({'started': False, 'message': 'Voice cooldown', 'retry_after_sec': int(remaining)}), 429
+
+    try:
+        threading.Thread(
+            target=fall_detector.voice_confirmation_and_call,
+            daemon=True
+        ).start()
+        return jsonify({'started': True}), 202
+    except Exception as e:
+        return jsonify({'started': False, 'error': str(e)}), 500
 if __name__ == '__main__':
     print(" Starting Simple Fall Detection Backend")
     print("=" * 50)
@@ -883,6 +1074,7 @@ if __name__ == '__main__':
     print("   - GET  /api/detections")
     print("   - GET  /api/ai_analysis  (Gemini AI)")
     print("   - POST /api/analyze_chat (Gemini Chat)")
+    print("   - POST /api/call_caregiver (Twilio Voice Call)")
     print("")
     
     app.run(debug=True, host='0.0.0.0', port=5001)

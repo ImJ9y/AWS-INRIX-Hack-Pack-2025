@@ -11,6 +11,7 @@ import { fadeIn } from "@/styles/motion";
 import { usePose, useWebcam } from "./hooks";
 import { INITIAL_STATE, computeFeatures, landmarksToPoseFrame, updateFallState } from "./lib/fallLogic";
 import { DetectorState, FallEvent, FallFeatures, PoseFrame } from "./types";
+import { startVoiceAssistant } from "./voiceAssistant";
 
 const skeletonConnections: [number, number][] = [
   [0, 1],
@@ -158,49 +159,48 @@ export function FallDetector() {
     setAnalysisLoading(true);
     setFallAnalysis(null);
     
-    try {
-      const message = `You are a calm and professional telehealth doctor reviewing an automated fall detection report.
-
-FALL EVENT DETAILS:
-- Severity: ${event.severity}
-- Time: ${new Date(event.timestamp).toLocaleString()}
-- Description: ${event.description}
-
-SENSOR DATA:
-- Torso Tilt: ${features.torsoTiltDeg.toFixed(1)}°
-- Head Drop: ${(features.headYDrop * 100).toFixed(1)}%
-- Velocity: ${features.headYVelPeak.toFixed(2)}
-- Stillness After Fall: ${features.stillnessSec.toFixed(1)}s
-
-Provide a short, reassuring medical summary (2–3 sentences) that:
-1. Briefly describes what likely happened during the fall in natural, human terms
-2. Mentions mild or moderate injury risks only if appropriate (e.g., soreness, bruising, lightheadedness)
-3. Gives a calm recommendation (e.g., rest, self-check, or seek help only if symptoms appear)
-
-Keep the tone caring, clear, and realistic—avoid overly severe or dramatic language.`;
-
-      const response = await fetch('http://localhost:5001/api/analyze_chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message })
-      });
-
-      if (!response.ok) {
-        throw new Error('Gemini API unavailable');
-      }
-
-      const data = await response.json();
-      if (data.success && data.response) {
-        setFallAnalysis(data.response);
+    // Generate plain rule-based analysis
+    setTimeout(() => {
+      let analysis = '';
+      
+      // Determine what happened based on metrics
+      const tilt = features.torsoTiltDeg;
+      const drop = features.headYDrop * 100;
+      const velocity = features.headYVelPeak;
+      const stillness = features.stillnessSec;
+      
+      // Describe the fall
+      if (tilt > 60 && velocity > 0.5) {
+        analysis = 'A rapid forward movement was detected with significant body angle change. ';
+      } else if (tilt > 45) {
+        analysis = 'A moderate lean forward or loss of balance was detected. ';
+      } else if (velocity > 0.4) {
+        analysis = 'Quick downward movement was observed. ';
       } else {
-        setFallAnalysis("AI analysis unavailable. Please ensure Gemini API is configured.");
+        analysis = 'Unusual movement pattern detected. ';
       }
-    } catch (error) {
-      console.error('Gemini analysis error:', error);
-      setFallAnalysis(null); // Hide on error
-    } finally {
+      
+      // Add injury assessment
+      if (event.severity === 'Critical' || event.severity === 'High') {
+        analysis += 'Given the force detected, there may be risk of bruising or minor injury. ';
+      } else if (event.severity === 'Moderate') {
+        analysis += 'The movement suggests a possible stumble or loss of balance. ';
+      } else {
+        analysis += 'Impact appears to be minimal. ';
+      }
+      
+      // Add recommendation
+      if (stillness > 2) {
+        analysis += 'Person remained still afterward - monitor for discomfort or dizziness. If pain persists or worsens, seek medical attention.';
+      } else if (stillness > 1) {
+        analysis += 'Check for any pain or discomfort. Rest and monitor symptoms.';
+      } else {
+        analysis += 'Person recovered quickly. Self-check for any soreness or discomfort.';
+      }
+      
+      setFallAnalysis(analysis);
       setAnalysisLoading(false);
-    }
+    }, 500); // Small delay to show loading state
   };
 
   const analyzeClipWithGemini = async () => {
@@ -209,51 +209,54 @@ Keep the tone caring, clear, and realistic—avoid overly severe or dramatic lan
     
     const stats = clipStatsRef.current;
     
-    try {
-      const message = `You are a physical therapist and movement specialist reviewing a short video clip of a person's movement.
-
-MOVEMENT DATA:
-- Max Velocity: ${stats.maxVelocity.toFixed(2)}
-- Max Torso Tilt: ${stats.maxTorsoTilt.toFixed(1)}°
-- Max Head Drop: ${(stats.maxHeadDrop * 100).toFixed(1)}%
-- Avg Confidence: ${(stats.avgConfidence * 100).toFixed(0)}%
-- Min Confidence: ${(stats.minConfidence * 100).toFixed(0)}%
-- Velocity Spikes: ${stats.velocitySpikes.length}
-- Tilt Recovery Time: ${stats.tiltRecoveryTime > 0 ? stats.tiltRecoveryTime.toFixed(1) + 's' : 'N/A'}
-- Total Frames: ${stats.frameCount}
-
-Write a short, realistic narrative (2–3 sentences) describing what likely happened in this clip.
-
-Your response should:
-1. Tell a brief story of the movement sequence (what the person was doing before, during, and after)
-2. Describe any noticeable or unusual motion patterns (e.g., stumble, turn, quick correction)
-3. End with a calm, clinical summary (e.g., normal adjustment, brief loss of balance, potential fall)
-
-Do **not** mention or repeat any data values or metrics in your answer.  
-Keep the tone natural, observational, and professional — like a therapist summarizing what they saw to a colleague.`;
-
-      const response = await fetch('http://localhost:5001/api/analyze_chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message })
-      });
-
-      if (!response.ok) {
-        throw new Error('Gemini API unavailable');
-      }
-
-      const data = await response.json();
-      if (data.success && data.response) {
-        setClipAnalysis(data.response);
+    // Generate plain rule-based analysis
+    setTimeout(() => {
+      let analysis = '';
+      
+      // Analyze movement pattern
+      const hasHighVelocity = stats.maxVelocity > 0.5;
+      const hasHighTilt = stats.maxTorsoTilt > 60;
+      const hasSignificantDrop = stats.maxHeadDrop > 0.35;
+      const hasLowConfidence = stats.minConfidence < 0.5;
+      const hasVelocitySpikes = stats.velocitySpikes.length > 2;
+      const hasQuickRecovery = stats.tiltRecoveryTime > 0 && stats.tiltRecoveryTime < 2;
+      
+      // Beginning of movement
+      if (hasLowConfidence) {
+        analysis = 'The person was moving at a moderate pace when tracking became difficult, suggesting rapid or erratic motion. ';
+      } else if (hasVelocitySpikes) {
+        analysis = 'The person was walking steadily when several quick movements were detected. ';
       } else {
-        setClipAnalysis(null);
+        analysis = 'The person was moving at a normal pace. ';
       }
-    } catch (error) {
-      console.error('Clip analysis error:', error);
-      setClipAnalysis(null);
-    } finally {
+      
+      // Critical moment
+      if (hasHighTilt && hasSignificantDrop && hasHighVelocity) {
+        analysis += 'They suddenly pitched forward significantly, losing their upright posture. ';
+      } else if (hasHighTilt && hasHighVelocity) {
+        analysis += 'A sudden forward lean with rapid movement was observed. ';
+      } else if (hasSignificantDrop) {
+        analysis += 'Their head dropped noticeably, indicating a possible stumble or loss of balance. ';
+      } else if (hasHighTilt) {
+        analysis += 'They leaned forward more than usual. ';
+      } else {
+        analysis += 'Minor balance adjustment detected. ';
+      }
+      
+      // Recovery/outcome
+      if (hasQuickRecovery) {
+        analysis += 'They recovered to an upright position quickly, suggesting good balance correction.';
+      } else if (stats.tiltRecoveryTime > 2) {
+        analysis += 'Recovery to normal posture took longer than usual, indicating a potential fall or difficulty regaining balance.';
+      } else if (hasLowConfidence) {
+        analysis += 'The tracking system had difficulty following them during the most unstable portion, indicating a potential fall event.';
+      } else {
+        analysis += 'The sequence appears to show a minor balance disturbance with uncertain recovery.';
+      }
+      
+      setClipAnalysis(analysis);
       setClipAnalysisLoading(false);
-    }
+    }, 500); // Small delay to show loading state
   };
 
   useEffect(() => {
@@ -290,7 +293,7 @@ Keep the tone natural, observational, and professional — like a therapist summ
     if (!video) return;
     const handleEnded = () => {
       setClipEnded(true);
-      // Analyze clip with Gemini when it ends
+      // Analyze clip when it ends
       if (sampleSrc && clipStatsRef.current.frameCount > 30) {
         analyzeClipWithGemini();
       }
@@ -350,14 +353,32 @@ Keep the tone natural, observational, and professional — like a therapist summ
     }
 
     const update = updateFallState(stateRef.current, computed, Date.now());
+    console.log('[DEBUG] Fall state update:', { 
+      changed: update.changed, 
+      hasEvent: !!update.event, 
+      status: update.state.status,
+      score: computed.score 
+    });
+    
     if (update.changed) {
       stateRef.current = update.state;
       setState(update.state);
     }
     if (update.event) {
+      console.log('[FALL DETECTED] Event created! Triggering analysis...');
       setLastEvent(update.event);
-      // Get AI analysis from doctor's perspective
+      // Get analysis from doctor's perspective
       analyzeWithGemini(update.event, computed);
+      
+      // Wait 3 seconds before starting voice assistant
+      console.log('[VOICE] Waiting 3 seconds before asking if person is okay...');
+      setTimeout(() => {
+        console.log('[VOICE] Starting voice assistant now...');
+        startVoiceAssistant().catch(err => {
+          console.error('[voice] Voice assistant error:', err);
+          alert('Voice assistant failed: ' + err.message + '\n\nCheck console for details. You may need Chrome/Edge/Safari.');
+        });
+      }, 3000); // 3 second delay
     }
   }, [landmarks, sampleSrc, confidence, fps]);
 
@@ -533,6 +554,22 @@ Keep the tone natural, observational, and professional — like a therapist summ
             )}
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            <Button 
+              type="button" 
+              variant="outline" 
+              size="sm" 
+              onClick={() => {
+                console.log('[TEST] Manual voice assistant trigger');
+                startVoiceAssistant().catch(err => {
+                  console.error('[voice] Error:', err);
+                  alert('Voice assistant error: ' + err.message);
+                });
+              }}
+              aria-label="Test voice assistant"
+              className="bg-blue-500 text-white hover:bg-blue-600"
+            >
+              Test Voice
+            </Button>
             <Button type="button" variant="outline" size="sm" onClick={handleReplayClick} aria-label="Upload sample clip">
               <Upload size={20} />
               Upload clip
@@ -616,7 +653,6 @@ function SummaryPanel({ summary, sampleLabel, aiAnalysis, aiLoading }: {
             <p className="text-sm font-semibold text-ink">Professional Assessment</p>
           </div>
           <p className="text-sm text-ink leading-relaxed whitespace-pre-wrap">{aiAnalysis}</p>
-          <p className="text-xs text-ink-muted italic">Powered by Gemini AI</p>
         </div>
       )}
       
@@ -693,7 +729,6 @@ function FallLogPanel({ lastEvent, analysis, analysisLoading }: {
             <p className="text-sm font-semibold text-ink">Doctor's Assessment</p>
           </div>
           <p className="text-sm text-ink leading-relaxed whitespace-pre-wrap">{analysis}</p>
-          <p className="text-xs text-ink-muted italic mt-2">Powered by Gemini AI</p>
         </div>
       )}
     </Card>
