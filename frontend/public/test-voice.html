@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Assistant Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 15px 30px;
+            font-size: 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 10px 0;
+            width: 100%;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        #log {
+            background: #000;
+            color: #0f0;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+        .log-entry {
+            margin: 5px 0;
+        }
+        .error { color: #ff4444; }
+        .success { color: #44ff44; }
+        .info { color: #44ffff; }
+        h1 { color: #333; }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .status.ok { background: #d4edda; color: #155724; }
+        .status.error { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Voice Assistant Test Page</h1>
+        <p>Use this page to test if your browser supports the Web Speech API required for the voice assistant.</p>
+        
+        <div id="browserCheck"></div>
+        
+        <button id="testSpeech" disabled>1. Test Speech (Text-to-Speech)</button>
+        <button id="testRecognition" disabled>2. Test Recognition (Speech-to-Text)</button>
+        <button id="testFull" disabled>3. Test Full Conversation</button>
+        
+        <div id="log"></div>
+    </div>
+
+    <script>
+        const logEl = document.getElementById('log');
+        const browserCheckEl = document.getElementById('browserCheck');
+        
+        function log(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+            console.log(message);
+        }
+
+        // Check browser support
+        function checkBrowserSupport() {
+            const hasSynthesis = 'speechSynthesis' in window;
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const hasRecognition = !!SpeechRecognition;
+            
+            let html = '';
+            
+            if (hasSynthesis && hasRecognition) {
+                html = '<div class="status ok">Browser supports all required APIs</div>';
+                document.getElementById('testSpeech').disabled = false;
+                document.getElementById('testRecognition').disabled = false;
+                document.getElementById('testFull').disabled = false;
+                log('Browser check: ALL APIs supported', 'success');
+            } else {
+                html = '<div class="status error">';
+                html += '<strong>Browser does NOT support required APIs:</strong><br>';
+                html += `Speech Synthesis: ${hasSynthesis ? 'YES' : 'NO'}<br>`;
+                html += `Speech Recognition: ${hasRecognition ? 'YES' : 'NO'}<br>`;
+                html += '<br><strong>Please use Chrome, Edge, or Safari</strong>';
+                html += '</div>';
+                log('Browser check: Missing required APIs', 'error');
+                if (!hasSynthesis) log('- Speech Synthesis NOT supported', 'error');
+                if (!hasRecognition) log('- Speech Recognition NOT supported', 'error');
+            }
+            
+            browserCheckEl.innerHTML = html;
+        }
+
+        // Test speech synthesis
+        document.getElementById('testSpeech').addEventListener('click', async () => {
+            log('Testing speech synthesis...', 'info');
+            
+            const utterance = new SpeechSynthesisUtterance('Hello, I am testing the voice assistant. Can you hear me?');
+            utterance.rate = 0.9;
+            
+            utterance.onstart = () => log('Speech started', 'success');
+            utterance.onend = () => log('Speech finished', 'success');
+            utterance.onerror = (e) => log(`Speech error: ${e.error}`, 'error');
+            
+            window.speechSynthesis.speak(utterance);
+        });
+
+        // Test speech recognition
+        document.getElementById('testRecognition').addEventListener('click', async () => {
+            log('Testing speech recognition...', 'info');
+            log('Please say something...', 'info');
+            
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+            
+            const timeout = setTimeout(() => {
+                recognition.stop();
+                log('Recognition timeout (no speech detected)', 'error');
+            }, 5000);
+            
+            recognition.onstart = () => log('Microphone activated - speak now!', 'success');
+            
+            recognition.onresult = (event) => {
+                clearTimeout(timeout);
+                const transcript = event.results[0][0].transcript;
+                log(`Heard: "${transcript}"`, 'success');
+            };
+            
+            recognition.onerror = (event) => {
+                clearTimeout(timeout);
+                log(`Recognition error: ${event.error}`, 'error');
+            };
+            
+            recognition.onend = () => {
+                clearTimeout(timeout);
+                log('Recognition ended', 'info');
+            };
+            
+            try {
+                recognition.start();
+            } catch (error) {
+                log(`Failed to start: ${error}`, 'error');
+            }
+        });
+
+        // Test full conversation
+        document.getElementById('testFull').addEventListener('click', async () => {
+            log('=== Starting full conversation test ===', 'info');
+            
+            // Speak
+            await new Promise((resolve) => {
+                log('Speaking question...', 'info');
+                const utterance = new SpeechSynthesisUtterance('Are you okay? Say yes or no.');
+                utterance.onend = () => {
+                    log('Finished speaking', 'success');
+                    resolve();
+                };
+                utterance.onerror = (e) => {
+                    log(`Speech error: ${e.error}`, 'error');
+                    resolve();
+                };
+                window.speechSynthesis.speak(utterance);
+            });
+            
+            // Listen
+            await new Promise((resolve) => {
+                log('Listening for your response...', 'info');
+                
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                const recognition = new SpeechRecognition();
+                recognition.continuous = false;
+                recognition.interimResults = false;
+                recognition.lang = 'en-US';
+                
+                const timeout = setTimeout(() => {
+                    recognition.stop();
+                    log('No response heard', 'error');
+                    resolve();
+                }, 5000);
+                
+                recognition.onresult = (event) => {
+                    clearTimeout(timeout);
+                    const transcript = event.results[0][0].transcript;
+                    log(`You said: "${transcript}"`, 'success');
+                    
+                    if (/yes|yeah|yep/i.test(transcript)) {
+                        log('Detected YES response', 'success');
+                    } else if (/no|nope/i.test(transcript)) {
+                        log('Detected NO response', 'success');
+                    } else {
+                        log('Response not recognized as yes or no', 'error');
+                    }
+                    resolve();
+                };
+                
+                recognition.onerror = (event) => {
+                    clearTimeout(timeout);
+                    log(`Recognition error: ${event.error}`, 'error');
+                    resolve();
+                };
+                
+                recognition.start();
+            });
+            
+            log('=== Conversation test complete ===', 'info');
+        });
+
+        // Run browser check on load
+        checkBrowserSupport();
+    </script>
+</body>
+</html>
+
